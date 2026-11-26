@@ -350,7 +350,7 @@ textarea { resize: none; }
 .rec-track img {
   flex: 0 0 100%;
   width: 100%;
-  height: 260px;
+  height: var(--rec-h, 260px);
   object-fit: cover;
   object-position: center 42%;
   display: block;
@@ -1650,4 +1650,5 @@ textarea { resize: none; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
 

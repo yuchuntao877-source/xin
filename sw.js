@@ -1,10 +1,10 @@
 ﻿/* ==========================================================
    交易手记 · Service Worker
-   只缓存应用外壳（HTML/CSS/JS/图标），数据在 IndexedDB 里，不经过这里。
-   策略：缓存优先 + 后台更新（stale-while-revalidate），
-        离线可用；发新版后第二次打开即更新。
+   策略：联网优先（network-first），断网时回落缓存。
+   为什么不用缓存优先：应用还在改，缓存优先会让手机上一直跑旧版，
+   出现"代码改了但行为没变"的假象。数据都在 IndexedDB 里，不经过这里。
    ========================================================== */
-const CACHE = 'trade-diary-v7';
+const CACHE = 'trade-diary-v9';
 const SHELL = [
   './',
   './index.html',
@@ -44,30 +44,20 @@ self.addEventListener('fetch', event => {
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
-    const hit = await cache.match(req);
-
-    const network = fetch(req)
-      .then(res => {
-        if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
-        return res;
-      })
-      .catch(() => null);
-
-    if (hit) return hit;
-
-    const res = await network;
-    if (res) return res;
-
-    if (req.mode === 'navigate') {
-      const fallback = await cache.match('./index.html');
-      if (fallback) return fallback;
+    try {
+      // 绕过 HTTP 缓存，尽量拿最新文件
+      const res = await fetch(req, { cache: 'no-store' });
+      if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
+      return res;
+    } catch (e) {
+      const hit = await cache.match(req);
+      if (hit) return hit;
+      if (req.mode === 'navigate') {
+        const fallback = await cache.match('./index.html');
+        if (fallback) return fallback;
+      }
+      return new Response('离线且没有缓存', { status: 503, statusText: 'Offline' });
     }
-    return new Response('离线且未缓存', { status: 503, statusText: 'Offline' });
   })());
 });
-
-
-
-
-
 

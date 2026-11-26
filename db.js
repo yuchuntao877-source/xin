@@ -141,14 +141,35 @@ const Store = (function () {
     }
   }
 
-  /* 缩略图：长边 480px、质量 0.72，给列表和表单用，几十 KB 一张 */
-  async function makeThumb(sourceBlob, maxSide, quality) {
-    const limit = maxSide || 480;
-    const q = quality || 0.72;
+  /* 按"宽高上限"缩放，不再用长边 —— 竖屏截图用长边一限，宽度会小得离谱，显示出来就糊 */
+  async function toJpegBox(source, w0, h0, maxW, maxH, quality) {
+    const scale = Math.min(1, maxW / w0, maxH / h0);
+    const w = Math.max(1, Math.round(w0 * scale));
+    const h = Math.max(1, Math.round(h0 * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f1218';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(source, 0, 0, w, h);
+    const blob = await withTimeout(
+      new Promise(res => canvas.toBlob(res, 'image/jpeg', quality)),
+      15000,
+      '图片编码超时（这张可能太大了）'
+    );
+    if (!blob) throw new Error('图片编码失败');
+    return { blob, w, h };
+  }
+
+  /* 缩略图：宽不超过 720、高不超过 1600，质量 0.74。
+     主要保证"宽度够"——列表里是按宽度铺满的，宽度不够就会糊。 */
+  async function makeThumb(sourceBlob, quality) {
     const d = await decode(sourceBlob);
     try {
       if (!d.w || !d.h) throw new Error('缩略图生成失败');
-      return await toJpeg(d.img, d.w, d.h, limit, q);
+      const r = await toJpegBox(d.img, d.w, d.h, 720, 1600, quality || 0.74);
+      return r.blob;
     } finally {
       d.cleanup();
     }
@@ -160,16 +181,17 @@ const Store = (function () {
     try {
       if (!d.w || !d.h) throw new Error('图片尺寸异常');
       const full = await toJpeg(d.img, d.w, d.h, 1800, 0.86);
-      const thumb = await toJpeg(d.img, d.w, d.h, 480, 0.72);
-      return { full, thumb };
+      const t = await toJpegBox(d.img, d.w, d.h, 720, 1600, 0.74);
+      return { full, thumb: t.blob, thumbW: t.w, thumbH: t.h };
     } finally {
       d.cleanup();
     }
   }
 
   /* 从已经画好的 canvas 直接出缩略图（裁剪后用，省一次解码） */
-  async function thumbFromCanvas(canvas, maxSide, quality) {
-    return toJpeg(canvas, canvas.width, canvas.height, maxSide || 480, quality || 0.72);
+  async function thumbFromCanvas(canvas, quality) {
+    const r = await toJpegBox(canvas, canvas.width, canvas.height, 720, 1600, quality || 0.74);
+    return r;
   }
 
   return {

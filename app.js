@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 /* ==========================================================
    交易手记 v1.0
@@ -28,6 +28,8 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
 
 const now = new Date();
 const TODAY_KEY = ymd(now);
+const BUILD = '1.0.9';
+const IMG_SCALES = [0.7, 0.85, 1, 1.3, 1.6];
 
 const fn = (n, d = 2) => {
   const v = Number(n) || 0;
@@ -151,7 +153,7 @@ async function loadAll() {
     trades = Array.isArray(rec.v.trades) ? rec.v.trades : [];
     reviews = rec.v.reviews && typeof rec.v.reviews === 'object' ? rec.v.reviews : {};
     quotes = Array.isArray(rec.v.quotes) ? rec.v.quotes : [];
-    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', lastExport: '' }, rec.v.settings || {});
+    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', imgScale: 1, lastExport: '' }, rec.v.settings || {});
   }
   const imgs = (await Store.all('img')) || [];
   imgBytes = 0;
@@ -161,10 +163,10 @@ async function loadAll() {
     const bytes = (it.bytes || it.blob.size || 0) + (it.thumbBytes || (it.thumb ? it.thumb.size : 0));
     imgSizes.set(it.id, bytes);
     imgBytes += bytes;
-    if (it.thumb) {
+    // thumbsV=3 才是按宽度生成的新缩略图；更早的那批宽度太小，显示会糊，后台重做
+    if (it.thumb && it.thumbsV === 3) {
       thumbUrls.set(it.id, URL.createObjectURL(it.thumb));
     } else {
-      // 老数据没有缩略图：先拿原图顶着，随后在后台补一张
       thumbUrls.set(it.id, URL.createObjectURL(it.blob));
       needThumb.push(it);
     }
@@ -175,8 +177,12 @@ async function loadAll() {
       let changed = false;
       for (const it of needThumb) {
         try {
-          const thumb = await Store.makeThumb(it.blob);
-          await Store.put('img', { id: it.id, blob: it.blob, bytes: it.bytes, thumb, thumbBytes: thumb.size, at: it.at });
+          const thumb = await Store.makeThumb(it.thumb && it.thumbsV === 3 ? it.thumb : it.blob);
+          await Store.put('img', {
+            id: it.id, blob: it.blob, bytes: it.bytes,
+            thumb, thumbBytes: thumb.size, thumbsV: 3,
+            at: it.at
+          });
           thumbUrls.set(it.id, URL.createObjectURL(thumb));
           changed = true;
         } catch (e) { /* 单张失败就算了 */ }
@@ -193,11 +199,11 @@ async function addImage(file) {
   if (file.size > 15 * 1024 * 1024) {
     throw new Error('这张图超过 15MB，先在相册里裁小一点');
   }
-  const { full: blob, thumb } = await Store.processImage(file);   // 一次解码，出两张
+  const { full: blob, thumb, thumbW, thumbH } = await Store.processImage(file);   // 一次解码，出两张
   const id = Store.newId();
   await Store.put('img', {
     id, blob, bytes: blob.size,
-    thumb, thumbBytes: thumb.size,
+    thumb, thumbBytes: thumb.size, thumbW, thumbH, thumbsV: 3,
     at: Date.now()
   });
   thumbUrls.set(id, URL.createObjectURL(thumb));
@@ -666,6 +672,21 @@ function applySettings() {
   $('#fsRange').value = zi;
   $('#fsLabel').textContent = ['小', '标准', '大'][zi];
 
+  // 列表图片大小：以 260px 为基准乘比例
+  const scales = IMG_SCALES;
+  const cur = Number(settings.imgScale) || 1;
+  let si = 2;
+  let best = Infinity;
+  scales.forEach((s, i) => {
+    const d = Math.abs(s - cur);
+    if (d < best) { best = d; si = i; }
+  });
+  document.documentElement.style.setProperty('--rec-h', Math.round(260 * scales[si]) + 'px');
+  const ir = $('#imgRange');
+  if (ir) ir.value = si;
+  const il = $('#imgLabel');
+  if (il) il.textContent = `${['小', '偏小', '标准', '大', '特大'][si]}（${Math.round(scales[si] * 100)}%）`;
+
   const meta = $('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', theme === 'light' ? '#f2f4f8' : '#0f1218');
 }
@@ -853,11 +874,12 @@ async function applyCrop() {
     return toast('裁剪失败，换张图试试');
   }
 
-  const thumb = await Store.thumbFromCanvas(cv);
+  const t = await Store.thumbFromCanvas(cv);
+  const thumb = t.blob;
   const id = Store.newId();
   await Store.put('img', {
     id, blob, bytes: blob.size,
-    thumb, thumbBytes: thumb.size,
+    thumb, thumbBytes: thumb.size, thumbW: t.w, thumbH: t.h, thumbsV: 3,
     at: Date.now()
   });
   thumbUrls.set(id, URL.createObjectURL(thumb));
@@ -1256,7 +1278,7 @@ async function importBackup(file) {
     trades = Array.isArray(data.trades) ? data.trades : [];
     reviews = data.reviews && typeof data.reviews === 'object' ? data.reviews : {};
     quotes = Array.isArray(data.quotes) ? data.quotes : [];
-    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', lastExport: '' }, data.settings || {});
+    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', imgScale: 1, lastExport: '' }, data.settings || {});
 
     const items = [];
     const fullMap = new Map();
@@ -1271,7 +1293,7 @@ async function importBackup(file) {
       if (!fullMap.has(id)) continue;
       const thumb = new Blob([buf], { type: 'image/jpeg' });
       const blob = fullMap.get(id);
-      items.push({ id, blob, bytes: blob.size, thumb, thumbBytes: thumb.size, at: Date.now() });
+      items.push({ id, blob, bytes: blob.size, thumb, thumbBytes: thumb.size, thumbsV: 3, at: Date.now() });
       thumbUrls.set(id, URL.createObjectURL(thumb));
       imgSizes.set(id, blob.size + thumb.size);
       imgBytes += blob.size + thumb.size;
@@ -1281,7 +1303,7 @@ async function importBackup(file) {
       if (items.some(it => it.id === id)) continue;
       let thumb = null;
       try { thumb = await Store.makeThumb(blob); } catch (e) { /* 忽略 */ }
-      items.push({ id, blob, bytes: blob.size, thumb, thumbBytes: thumb ? thumb.size : 0, at: Date.now() });
+      items.push({ id, blob, bytes: blob.size, thumb, thumbBytes: thumb ? thumb.size : 0, thumbsV: 3, at: Date.now() });
       thumbUrls.set(id, URL.createObjectURL(thumb || blob));
       imgSizes.set(id, blob.size + (thumb ? thumb.size : 0));
       imgBytes += blob.size + (thumb ? thumb.size : 0);
@@ -1612,7 +1634,15 @@ function bindEvents() {
     const arr = [];
     const failed = [];
     showBusy(`处理图片 0/${list.length}`, true);
+    let watchdog = null;
     try {
+      // 总闸：万一某一步既没返回也没触发自己的超时，90 秒后强制收场
+      watchdog = setTimeout(() => {
+        busyCancelled = true;
+        hideBusy();
+        toast('处理超时，已中止；换张小一点的截图再试');
+      }, 90000);
+
       for (let i = 0; i < list.length; i++) {
         if (busyCancelled) break;
         setBusyText(`处理图片 ${i + 1}/${list.length}`);
@@ -1625,6 +1655,7 @@ function bindEvents() {
         }
       }
     } finally {
+      clearTimeout(watchdog);
       hideBusy();
     }
 
@@ -1783,6 +1814,12 @@ function bindEvents() {
     scheduleSave();
   });
 
+  $('#imgRange').addEventListener('input', e => {
+    settings.imgScale = IMG_SCALES[Number(e.target.value)] || 1;
+    applySettings();
+    scheduleSave();
+  });
+
   // 备份
   $('#exportBtn').addEventListener('click', exportBackup);
   $('#importBtn').addEventListener('click', () => $('#importFile').click());
@@ -1793,7 +1830,7 @@ function bindEvents() {
   });
   $('#clearBtn').addEventListener('click', clearAll);
   $('#aboutBtn').addEventListener('click', () => {
-    toast('交易手记 v1.0 · 纯本地 · 数据不上传');
+    toast(`交易手记 v1.0 · build ${BUILD} · 纯本地`);
   });
 
   // 离开页面时尽量落盘
@@ -1818,6 +1855,9 @@ function registerSW() {
 async function boot() {
   bindEvents();
   applySettings();
+
+  const buildEl = $('#buildText');
+  if (buildEl) buildEl.textContent = `v1.0 · build ${BUILD} · 可加到主屏幕`;
 
   try {
     await Store.open();
