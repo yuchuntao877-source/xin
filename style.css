@@ -342,12 +342,17 @@ textarea { resize: none; }
   position: relative;
   background: #0b0e13;
   border-bottom: 1px solid var(--line);
+  /* 显示框比例：宽:高 由设置里的百分比换算，默认 150% → 1:1.5 */
+  aspect-ratio: var(--rec-ratio, 0.6667);
+  min-height: 140px;
+  overflow: hidden;
 }
 
 [data-theme="light"] .rec-media { background: #eef1f6; }
 
 .rec-track {
   display: flex;
+  height: 100%;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
@@ -359,7 +364,7 @@ textarea { resize: none; }
 .rec-track img {
   flex: 0 0 100%;
   width: 100%;
-  height: var(--rec-h, 260px);
+  height: 100%;
   object-fit: cover;
   object-position: center 42%;
   display: block;

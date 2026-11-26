@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 /* ==========================================================
    交易手记 v1.0
@@ -28,8 +28,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
 
 const now = new Date();
 const TODAY_KEY = ymd(now);
-const BUILD = '1.1.0';
-const IMG_SCALES = [0.7, 0.85, 1, 1.3, 1.6];
+const BUILD = '1.1.1';
 
 const fn = (n, d = 2) => {
   const v = Number(n) || 0;
@@ -153,7 +152,7 @@ async function loadAll() {
     trades = Array.isArray(rec.v.trades) ? rec.v.trades : [];
     reviews = rec.v.reviews && typeof rec.v.reviews === 'object' ? rec.v.reviews : {};
     quotes = Array.isArray(rec.v.quotes) ? rec.v.quotes : [];
-    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', imgScale: 1, lastExport: '' }, rec.v.settings || {});
+    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', imgPct: 150, lastExport: '' }, rec.v.settings || {});
   }
   const imgs = (await Store.all('img')) || [];
   imgBytes = 0;
@@ -672,20 +671,15 @@ function applySettings() {
   $('#fsRange').value = zi;
   $('#fsLabel').textContent = ['小', '标准', '大'][zi];
 
-  // 列表图片大小：以 260px 为基准乘比例
-  const scales = IMG_SCALES;
-  const cur = Number(settings.imgScale) || 1;
-  let si = 2;
-  let best = Infinity;
-  scales.forEach((s, i) => {
-    const d = Math.abs(s - cur);
-    if (d < best) { best = d; si = i; }
-  });
-  document.documentElement.style.setProperty('--rec-h', Math.round(260 * scales[si]) + 'px');
+  // 列表图片框：宽度固定为卡片宽（≈手机宽），百分比表示"高度 = 宽度 × 百分比"
+  // 默认 150% → 方框 宽:高 = 1:1.5；50% → 1:0.5（扁条），200% → 1:2（更高）
+  const pct = Math.min(200, Math.max(50, Math.round(Number(settings.imgPct) || 150)));
+  const ratio = 100 / pct;                 // aspect-ratio = 宽/高
+  document.documentElement.style.setProperty('--rec-ratio', ratio.toFixed(4));
   const ir = $('#imgRange');
-  if (ir) ir.value = si;
+  if (ir) ir.value = String(pct);
   const il = $('#imgLabel');
-  if (il) il.textContent = `${['小', '偏小', '标准', '大', '特大'][si]}（${Math.round(scales[si] * 100)}%）`;
+  if (il) il.textContent = `${pct}% · 宽:高 = 1:${(pct / 100).toFixed(2)}`;
 
   const meta = $('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', theme === 'light' ? '#f2f4f8' : '#0f1218');
@@ -1278,7 +1272,7 @@ async function importBackup(file) {
     trades = Array.isArray(data.trades) ? data.trades : [];
     reviews = data.reviews && typeof data.reviews === 'object' ? data.reviews : {};
     quotes = Array.isArray(data.quotes) ? data.quotes : [];
-    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', imgScale: 1, lastExport: '' }, data.settings || {});
+    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', imgPct: 150, lastExport: '' }, data.settings || {});
 
     const items = [];
     const fullMap = new Map();
@@ -1815,7 +1809,7 @@ function bindEvents() {
   });
 
   $('#imgRange').addEventListener('input', e => {
-    settings.imgScale = IMG_SCALES[Number(e.target.value)] || 1;
+    settings.imgPct = Number(e.target.value) || 150;
     applySettings();
     scheduleSave();
   });
