@@ -49,8 +49,9 @@ let reviews = {};
 let quotes = [];
 let settings = { theme: 'dark', zoom: 1, updown: 'cn', lastExport: '' };
 
-const imgUrls = new Map();     // 图片 id -> objectURL
-const imgSizes = new Map();    // 图片 id -> 字节数
+const thumbUrls = new Map();   // 图片 id -> 缩略图 objectURL（列表、表单用）
+const fullUrls = new Map();    // 图片 id -> 原图 objectURL（只在看大图/裁剪时创建）
+const imgSizes = new Map();    // 图片 id -> 占用字节
 let imgBytes = 0;
 
 const PLACEHOLDER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
@@ -59,7 +60,7 @@ const PLACEHOLDER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
   '<text x="160" y="112" font-size="13" fill="#6c7488" text-anchor="middle">图片已丢失</text></svg>'
 );
 
-const shotUrl = id => imgUrls.get(id) || PLACEHOLDER;
+const shotUrl = id => thumbUrls.get(id) || PLACEHOLDER;
 
 const ui = {
   side: 'buy',
@@ -154,34 +155,77 @@ async function loadAll() {
   }
   const imgs = (await Store.all('img')) || [];
   imgBytes = 0;
+  const needThumb = [];
   imgs.forEach(it => {
-    if (it && it.id && it.blob) {
-      imgUrls.set(it.id, URL.createObjectURL(it.blob));
-      const bytes = it.bytes || it.blob.size || 0;
-      imgSizes.set(it.id, bytes);
-      imgBytes += bytes;
+    if (!it || !it.id || !it.blob) return;
+    const bytes = (it.bytes || it.blob.size || 0) + (it.thumbBytes || (it.thumb ? it.thumb.size : 0));
+    imgSizes.set(it.id, bytes);
+    imgBytes += bytes;
+    if (it.thumb) {
+      thumbUrls.set(it.id, URL.createObjectURL(it.thumb));
+    } else {
+      // 老数据没有缩略图：先拿原图顶着，随后在后台补一张
+      thumbUrls.set(it.id, URL.createObjectURL(it.blob));
+      needThumb.push(it);
     }
   });
+
+  if (needThumb.length) {
+    setTimeout(async () => {
+      let changed = false;
+      for (const it of needThumb) {
+        try {
+          const thumb = await Store.makeThumb(it.blob);
+          await Store.put('img', { id: it.id, blob: it.blob, bytes: it.bytes, thumb, thumbBytes: thumb.size, at: it.at });
+          thumbUrls.set(it.id, URL.createObjectURL(thumb));
+          changed = true;
+        } catch (e) { /* 单张失败就算了 */ }
+      }
+      if (changed) renderAll();
+    }, 400);
+  }
 }
 
 /* ==========================================================
    图片
    ========================================================== */
 async function addImage(file) {
-  const blob = await Store.compressImage(file);
+  const blob = await Store.compressImage(file);          // 原图（1800px / 0.86）
+  const thumb = await Store.makeThumb(blob);             // 缩略图（480px / 0.72）
   const id = Store.newId();
-  await Store.put('img', { id, blob, bytes: blob.size, at: Date.now() });
-  imgUrls.set(id, URL.createObjectURL(blob));
-  imgSizes.set(id, blob.size);
-  imgBytes += blob.size;
+  await Store.put('img', {
+    id, blob, bytes: blob.size,
+    thumb, thumbBytes: thumb.size,
+    at: Date.now()
+  });
+  thumbUrls.set(id, URL.createObjectURL(thumb));
+  imgSizes.set(id, blob.size + thumb.size);
+  imgBytes += blob.size + thumb.size;
   return id;
+}
+
+async function getFullUrl(id) {
+  if (!id) return null;
+  if (fullUrls.has(id)) return fullUrls.get(id);
+  try {
+    const rec = await Store.get('img', id);
+    if (!rec || !rec.blob) return thumbUrls.get(id) || null;
+    const url = URL.createObjectURL(rec.blob);
+    fullUrls.set(id, url);
+    return url;
+  } catch (e) {
+    return thumbUrls.get(id) || null;
+  }
 }
 
 async function removeImages(ids) {
   for (const id of ids) {
-    const url = imgUrls.get(id);
-    if (url) URL.revokeObjectURL(url);
-    imgUrls.delete(id);
+    const t = thumbUrls.get(id);
+    if (t) URL.revokeObjectURL(t);
+    thumbUrls.delete(id);
+    const f = fullUrls.get(id);
+    if (f) URL.revokeObjectURL(f);
+    fullUrls.delete(id);
     if (imgSizes.has(id)) {
       imgBytes = Math.max(0, imgBytes - imgSizes.get(id));
       imgSizes.delete(id);
@@ -217,7 +261,7 @@ function recItem(t, opts = {}) {
   const shots = t.shots || [];
   const media = shots.length ? `
     <div class="rec-media">
-      <div class="rec-track">${shots.map(id => `<img src="${shotUrl(id)}" loading="lazy" decoding="async" data-view alt="">`).join('')}</div>
+      <div class="rec-track">${shots.map(id => `<img src="${shotUrl(id)}" loading="lazy" decoding="async" data-view="${id}" alt="">`).join('')}</div>
       ${shots.length > 1 ? `<span class="rec-count">${shots.length} 张 · 左右滑</span>` : ''}
     </div>` : '';
   return `
@@ -242,7 +286,7 @@ function renderShots(sel, arr, who) {
   if (!box) return;
   box.innerHTML = arr.map((id, i) => `
     <div class="shot">
-      <img src="${shotUrl(id)}" loading="lazy" decoding="async" data-view alt="">
+      <img src="${shotUrl(id)}" loading="lazy" decoding="async" data-view="${id}" alt="">
       <button class="shot-crop" data-crop="${i}" data-who="${who}">裁剪</button>
       <button class="shot-x" data-rm="${i}" data-who="${who}" aria-label="删除">✕</button>
     </div>`).join('') + `
@@ -649,8 +693,14 @@ function resetZoom() {
   applyZoom();
 }
 
-function openViewer(src) {
-  $('#viewerImg').src = src;
+async function openViewer(id) {
+  if (!id) return;
+  const url = (await getFullUrl(id)) || thumbUrls.get(id);
+  if (!url) {
+    toast('这张图不见了');
+    return;
+  }
+  $('#viewerImg').src = url;
   resetZoom();
   $('#viewer').classList.add('show');
   $('#viewer').setAttribute('aria-hidden', 'false');
@@ -719,13 +769,22 @@ function layoutCropper() {
   paintCropBox();
 }
 
-function openCropper(index, who) {
+async function openCropper(index, who) {
   const arr = who === 'draft' ? ui.draftShots : ui.reviewShots;
   const id = arr[index];
   if (!id) return;
 
-  const img = new Image();
-  img.onload = () => {
+  showBusy('准备裁剪…');
+  try {
+    // 裁剪要用原图，不能用缩略图，否则越裁越糊
+    const url = (await getFullUrl(id)) || shotUrl(id);
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('这张图读不出来'));
+      im.src = url;
+    });
+
     cropState.open = true;
     cropState.who = who;
     cropState.index = index;
@@ -733,12 +792,14 @@ function openCropper(index, who) {
     cropState.imgEl = img;
     cropState.natW = img.naturalWidth || 1;
     cropState.natH = img.naturalHeight || 1;
-    $('#cropImg').src = shotUrl(id);
+    $('#cropImg').src = url;
     $('#cropper').hidden = false;
     requestAnimationFrame(layoutCropper);
-  };
-  img.onerror = () => toast('这张图读不出来');
-  img.src = shotUrl(id);
+  } catch (e) {
+    toast(e.message || '这张图读不出来');
+  } finally {
+    hideBusy();
+  }
 }
 
 function closeCropper() {
@@ -772,11 +833,17 @@ async function applyCrop() {
     return toast('裁剪失败，换张图试试');
   }
 
+  const thumb = await Store.makeThumb(blob);
   const id = Store.newId();
-  await Store.put('img', { id, blob, bytes: blob.size, at: Date.now() });
-  imgUrls.set(id, URL.createObjectURL(blob));
-  imgSizes.set(id, blob.size);
-  imgBytes += blob.size;
+  await Store.put('img', {
+    id, blob, bytes: blob.size,
+    thumb, thumbBytes: thumb.size,
+    at: Date.now()
+  });
+  thumbUrls.set(id, URL.createObjectURL(thumb));
+  fullUrls.set(id, URL.createObjectURL(blob));
+  imgSizes.set(id, blob.size + thumb.size);
+  imgBytes += blob.size + thumb.size;
 
   const arr = cropState.who === 'draft' ? ui.draftShots : ui.reviewShots;
   arr[cropState.index] = id;
@@ -987,7 +1054,7 @@ function openDetail(id) {
   ];
   const shots = t.shots || [];
   $('#detailBody').innerHTML = `
-    ${shots.length ? `<div class="detail-shots">${shots.map(s => `<img src="${shotUrl(s)}" loading="lazy" decoding="async" data-view alt="">`).join('')}</div>` : ''}
+    ${shots.length ? `<div class="detail-shots">${shots.map(s => `<img src="${shotUrl(s)}" loading="lazy" decoding="async" data-view="${s}" alt="">`).join('')}</div>` : ''}
     <div class="rec-meta">
       <span class="badge ${t.side}">${sideText(t.side)}</span>
       <span class="rec-name" style="font-size:var(--fs-xl)">${esc(t.name)}</span>
@@ -1109,6 +1176,10 @@ async function exportBackup() {
       if (!rec || !rec.blob) { missing++; continue; }
       const buf = new Uint8Array(await rec.blob.arrayBuffer());
       files.push({ name: `images/${id}.jpg`, data: buf });
+      if (rec.thumb) {
+        const tb = new Uint8Array(await rec.thumb.arrayBuffer());
+        files.push({ name: `thumbs/${id}.jpg`, data: tb });
+      }
     }
 
     const bytes = TinyZip.build(files);
@@ -1141,8 +1212,10 @@ async function importBackup(file) {
     toast('正在导入…');
     await Store.clear('kv');
     await Store.clear('img');
-    imgUrls.forEach(u => URL.revokeObjectURL(u));
-    imgUrls.clear();
+    thumbUrls.forEach(u => URL.revokeObjectURL(u));
+    thumbUrls.clear();
+    fullUrls.forEach(u => URL.revokeObjectURL(u));
+    fullUrls.clear();
     imgSizes.clear();
     imgBytes = 0;
 
@@ -1152,14 +1225,32 @@ async function importBackup(file) {
     settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', lastExport: '' }, data.settings || {});
 
     const items = [];
+    const fullMap = new Map();
     for (const [name, buf] of map.entries()) {
-      if (!name.startsWith('images/') || !name.endsWith('.jpg')) continue;
+      if (name.startsWith('images/') && name.endsWith('.jpg')) {
+        fullMap.set(name.slice(7, -4), new Blob([buf], { type: 'image/jpeg' }));
+      }
+    }
+    for (const [name, buf] of map.entries()) {
+      if (!name.startsWith('thumbs/') || !name.endsWith('.jpg')) continue;
       const id = name.slice(7, -4);
-      const blob = new Blob([buf], { type: 'image/jpeg' });
-      items.push({ id, blob, bytes: blob.size, at: Date.now() });
-      imgUrls.set(id, URL.createObjectURL(blob));
-      imgSizes.set(id, blob.size);
-      imgBytes += blob.size;
+      if (!fullMap.has(id)) continue;
+      const thumb = new Blob([buf], { type: 'image/jpeg' });
+      const blob = fullMap.get(id);
+      items.push({ id, blob, bytes: blob.size, thumb, thumbBytes: thumb.size, at: Date.now() });
+      thumbUrls.set(id, URL.createObjectURL(thumb));
+      imgSizes.set(id, blob.size + thumb.size);
+      imgBytes += blob.size + thumb.size;
+    }
+    // 没有缩略图的老备份：现场补一张
+    for (const [id, blob] of fullMap.entries()) {
+      if (items.some(it => it.id === id)) continue;
+      let thumb = null;
+      try { thumb = await Store.makeThumb(blob); } catch (e) { /* 忽略 */ }
+      items.push({ id, blob, bytes: blob.size, thumb, thumbBytes: thumb ? thumb.size : 0, at: Date.now() });
+      thumbUrls.set(id, URL.createObjectURL(thumb || blob));
+      imgSizes.set(id, blob.size + (thumb ? thumb.size : 0));
+      imgBytes += blob.size + (thumb ? thumb.size : 0);
     }
     if (items.length) await Store.putMany('img', items);
 
@@ -1177,8 +1268,10 @@ async function clearAll() {
   if (!confirm('最后确认一次：真的要清空吗？')) return;
   await Store.clear('kv');
   await Store.clear('img');
-  imgUrls.forEach(u => URL.revokeObjectURL(u));
-  imgUrls.clear();
+  thumbUrls.forEach(u => URL.revokeObjectURL(u));
+  thumbUrls.clear();
+  fullUrls.forEach(u => URL.revokeObjectURL(u));
+  fullUrls.clear();
   imgSizes.clear();
   imgBytes = 0;
   trades = [];
@@ -1556,7 +1649,7 @@ function bindEvents() {
   // 列表 / 日历 / 图片 / 删除 / 提示
   document.addEventListener('click', e => {
     const img = e.target.closest('img[data-view]');
-    if (img) { openViewer(img.src); return; }
+    if (img) { openViewer(img.dataset.view); return; }
 
     const sk = e.target.closest('[data-stock]');
     if (sk) {

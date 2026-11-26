@@ -1,4 +1,4 @@
-/* ================= 设计变量 ================= */
+﻿/* ================= 设计变量 ================= */
 :root {
   --zoom: 1;
   --fs-2xs: calc(10.5px * var(--zoom));
@@ -329,8 +329,6 @@ textarea { resize: none; }
   transition: transform .12s;
 }
 
-.rec:active { transform: scale(.994); }
-
 .rec-media {
   position: relative;
   background: #0b0e13;
@@ -369,7 +367,6 @@ textarea { resize: none; }
   padding: 2px 9px;
   border-radius: 999px;
   letter-spacing: .3px;
-  backdrop-filter: blur(3px);
 }
 
 .rec-body { padding: 11px 13px 13px; }
@@ -1275,7 +1272,6 @@ textarea { resize: none; }
   display: grid;
   place-items: center;
   padding: 0;
-  backdrop-filter: blur(3px);
 }
 
 .shot-crop {
@@ -1289,7 +1285,6 @@ textarea { resize: none; }
   background: rgba(0, 0, 0, .64);
   color: #fff;
   font-size: var(--fs-2xs);
-  backdrop-filter: blur(3px);
 }
 
 .shot-add {
@@ -1319,7 +1314,6 @@ textarea { resize: none; }
   pointer-events: none;
   transition: opacity .26s;
   z-index: 50;
-  backdrop-filter: blur(2px);
 }
 
 .overlay.show { opacity: 1; pointer-events: auto; }
@@ -1574,7 +1568,6 @@ textarea { resize: none; }
   background: rgba(6, 8, 12, .72);
   color: #fff;
   font-size: var(--fs-base);
-  backdrop-filter: blur(2px);
 }
 
 .busy[hidden] { display: none; }
@@ -1645,3 +1638,4 @@ textarea { resize: none; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+

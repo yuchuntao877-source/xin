@@ -73,52 +73,69 @@ const Store = (function () {
     });
   }
 
-  /* 压缩：长边 1400px、JPEG 质量 0.8，手机截图约 120–300KB
-     优先用 createImageBitmap（解码在后台线程，Safari 15+ 支持），失败退回 <img> */
+  /* 把任意图片源画到 canvas 再编码成 JPEG */
+  async function toJpeg(source, w0, h0, limit, quality) {
+    const scale = Math.min(1, limit / Math.max(w0, h0));
+    const w = Math.max(1, Math.round(w0 * scale));
+    const h = Math.max(1, Math.round(h0 * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f1218';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(source, 0, 0, w, h);
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    if (!blob) throw new Error('图片编码失败');
+    return blob;
+  }
+
+  /* 解码：优先 createImageBitmap（后台线程，Safari 15+），失败退回 <img> */
+  async function decode(source) {
+    if (typeof createImageBitmap === 'function') {
+      try {
+        const bmp = await createImageBitmap(source);
+        return { img: bmp, w: bmp.width, h: bmp.height, cleanup: () => { if (bmp.close) bmp.close(); } };
+      } catch (e) { /* 走下面的兜底 */ }
+    }
+    const url = URL.createObjectURL(source);
+    const el = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('这张图读不出来'));
+      img.src = url;
+    });
+    return {
+      img: el,
+      w: el.naturalWidth || el.width,
+      h: el.naturalHeight || el.height,
+      cleanup: () => URL.revokeObjectURL(url)
+    };
+  }
+
+  /* 原图：长边 1800px、质量 0.86 —— 手机截图基本保持原尺寸，尽量不糊 */
   async function compressImage(file, maxSide, quality) {
-    const limit = maxSide || 1400;
-    const q = quality || 0.8;
-    let bmp = null;
-    let url = null;
-    let el = null;
-
+    const limit = maxSide || 1800;
+    const q = quality || 0.86;
+    const d = await decode(file);
     try {
-      if (typeof createImageBitmap === 'function') {
-        try { bmp = await createImageBitmap(file); } catch (e) { bmp = null; }
-      }
-
-      if (!bmp) {
-        url = URL.createObjectURL(file);
-        el = await new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(img);
-          img.onerror = () => reject(new Error('这张图读不出来'));
-          img.src = url;
-        });
-      }
-
-      const w0 = bmp ? bmp.width : (el.naturalWidth || el.width);
-      const h0 = bmp ? bmp.height : (el.naturalHeight || el.height);
-      if (!w0 || !h0) throw new Error('图片尺寸异常');
-
-      const scale = Math.min(1, limit / Math.max(w0, h0));
-      const w = Math.max(1, Math.round(w0 * scale));
-      const h = Math.max(1, Math.round(h0 * scale));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#0f1218';
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(bmp || el, 0, 0, w, h);
-
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', q));
-      if (!blob) throw new Error('图片压缩失败');
-      return blob;
+      if (!d.w || !d.h) throw new Error('图片尺寸异常');
+      return await toJpeg(d.img, d.w, d.h, limit, q);
     } finally {
-      if (bmp && typeof bmp.close === 'function') bmp.close();
-      if (url) URL.revokeObjectURL(url);
+      d.cleanup();
+    }
+  }
+
+  /* 缩略图：长边 480px、质量 0.72，给列表和表单用，几十 KB 一张 */
+  async function makeThumb(sourceBlob, maxSide, quality) {
+    const limit = maxSide || 480;
+    const q = quality || 0.72;
+    const d = await decode(sourceBlob);
+    try {
+      if (!d.w || !d.h) throw new Error('缩略图生成失败');
+      return await toJpeg(d.img, d.w, d.h, limit, q);
+    } finally {
+      d.cleanup();
     }
   }
 
@@ -127,6 +144,7 @@ const Store = (function () {
     newId,
     putMany,
     compressImage,
+    makeThumb,
     get: (store, key) => tx(store, 'readonly', os => os.get(key)),
     put: (store, value) => tx(store, 'readwrite', os => os.put(value)),
     del: (store, key) => tx(store, 'readwrite', os => os.delete(key)),
