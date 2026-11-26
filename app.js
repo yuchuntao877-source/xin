@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /* ==========================================================
    交易手记 v1.0
@@ -28,7 +28,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
 
 const now = new Date();
 const TODAY_KEY = ymd(now);
-const BUILD = '1.1.1';
+const BUILD = '1.1.2';
 
 const fn = (n, d = 2) => {
   const v = Number(n) || 0;
@@ -152,7 +152,7 @@ async function loadAll() {
     trades = Array.isArray(rec.v.trades) ? rec.v.trades : [];
     reviews = rec.v.reviews && typeof rec.v.reviews === 'object' ? rec.v.reviews : {};
     quotes = Array.isArray(rec.v.quotes) ? rec.v.quotes : [];
-    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', imgPct: 150, lastExport: '' }, rec.v.settings || {});
+    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', fit: 'cover', boxW: 100, boxH: 150, lastExport: '' }, rec.v.settings || {});
   }
   const imgs = (await Store.all('img')) || [];
   imgBytes = 0;
@@ -671,15 +671,27 @@ function applySettings() {
   $('#fsRange').value = zi;
   $('#fsLabel').textContent = ['小', '标准', '大'][zi];
 
-  // 列表图片框：宽度固定为卡片宽（≈手机宽），百分比表示"高度 = 宽度 × 百分比"
-  // 默认 150% → 方框 宽:高 = 1:1.5；50% → 1:0.5（扁条），200% → 1:2（更高）
-  const pct = Math.min(200, Math.max(50, Math.round(Number(settings.imgPct) || 150)));
-  const ratio = 100 / pct;                 // aspect-ratio = 宽/高
-  document.documentElement.style.setProperty('--rec-ratio', ratio.toFixed(4));
-  const ir = $('#imgRange');
-  if (ir) ir.value = String(pct);
-  const il = $('#imgLabel');
-  if (il) il.textContent = `${pct}% · 宽:高 = 1:${(pct / 100).toFixed(2)}`;
+  // 列表图片显示：宽度、高度、填充方式三个独立设置
+  const boxW = Math.min(100, Math.max(50, Math.round(Number(settings.boxW) || 100)));
+  const boxH = Math.min(250, Math.max(50, Math.round(Number(settings.boxH) || 150)));
+  const fit = settings.fit === 'contain' ? 'contain' : 'cover';
+  document.documentElement.style.setProperty('--rec-w', boxW + '%');
+  document.documentElement.style.setProperty('--rec-ratio', (100 / boxH).toFixed(4));
+  document.documentElement.style.setProperty('--rec-fit', fit);
+
+  const wr = $('#wRange');
+  if (wr) wr.value = String(boxW);
+  const wl = $('#wLabel');
+  if (wl) wl.textContent = boxW >= 100 ? '100%（满手机宽）' : `${boxW}%（两边留白）`;
+
+  const hr = $('#hRange');
+  if (hr) hr.value = String(boxH);
+  const hl = $('#hLabel');
+  if (hl) hl.textContent = `${boxH}%（高 = ${(boxH / 100).toFixed(2)} × 宽）`;
+
+  const fl = $('#fitLabel');
+  if (fl) fl.textContent = fit === 'contain' ? '完整（整张缩进框里）' : '裁切（铺满，只显示一部分）';
+  $$('#fitSeg button').forEach(b => b.classList.toggle('on', b.dataset.fit === fit));
 
   const meta = $('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', theme === 'light' ? '#f2f4f8' : '#0f1218');
@@ -1272,7 +1284,7 @@ async function importBackup(file) {
     trades = Array.isArray(data.trades) ? data.trades : [];
     reviews = data.reviews && typeof data.reviews === 'object' ? data.reviews : {};
     quotes = Array.isArray(data.quotes) ? data.quotes : [];
-    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', imgPct: 150, lastExport: '' }, data.settings || {});
+    settings = Object.assign({ theme: 'dark', zoom: 1, updown: 'cn', fit: 'cover', boxW: 100, boxH: 150, lastExport: '' }, data.settings || {});
 
     const items = [];
     const fullMap = new Map();
@@ -1808,8 +1820,20 @@ function bindEvents() {
     scheduleSave();
   });
 
-  $('#imgRange').addEventListener('input', e => {
-    settings.imgPct = Number(e.target.value) || 150;
+  $$('#fitSeg button').forEach(b => b.addEventListener('click', () => {
+    settings.fit = b.dataset.fit === 'contain' ? 'contain' : 'cover';
+    applySettings();
+    scheduleSave();
+  }));
+
+  $('#wRange').addEventListener('input', e => {
+    settings.boxW = Number(e.target.value) || 100;
+    applySettings();
+    scheduleSave();
+  });
+
+  $('#hRange').addEventListener('input', e => {
+    settings.boxH = Number(e.target.value) || 150;
     applySettings();
     scheduleSave();
   });
@@ -1875,5 +1899,7 @@ window.addEventListener('unhandledrejection', e => {
 });
 
 document.addEventListener('DOMContentLoaded', boot);
+
+
 
 

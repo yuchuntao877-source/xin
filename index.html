@@ -256,9 +256,22 @@
             <input type="range" min="0" max="2" step="1" value="1" id="fsRange" class="range">
           </div>
           <div class="row">
-            <span class="r-ic">图</span>
-            <span class="r-main"><span class="r-title">列表图片框比例</span><span class="r-desc" id="imgLabel">150% · 宽:高 = 1:1.50</span></span>
-            <input type="range" min="50" max="200" step="5" value="150" id="imgRange" class="range">
+            <span class="r-ic">框</span>
+            <span class="r-main"><span class="r-title">显示方式</span><span class="r-desc" id="fitLabel">裁切（铺满，只显示一部分）</span></span>
+            <div class="seg seg-tiny" id="fitSeg">
+              <button data-fit="contain">完整</button>
+              <button data-fit="cover" class="on">裁切</button>
+            </div>
+          </div>
+          <div class="row">
+            <span class="r-ic">宽</span>
+            <span class="r-main"><span class="r-title">显示框宽度</span><span class="r-desc" id="wLabel">100%（满手机宽）</span></span>
+            <input type="range" min="50" max="100" step="5" value="100" id="wRange" class="range">
+          </div>
+          <div class="row">
+            <span class="r-ic">高</span>
+            <span class="r-main"><span class="r-title">显示框高度</span><span class="r-desc" id="hLabel">150%（高 = 1.5 × 宽）</span></span>
+            <input type="range" min="50" max="250" step="5" value="150" id="hRange" class="range">
           </div>
         </div>
 
