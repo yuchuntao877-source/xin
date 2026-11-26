@@ -28,7 +28,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
 
 const now = new Date();
 const TODAY_KEY = ymd(now);
-const BUILD = '1.1.2';
+const BUILD = '1.1.3';
 
 const fn = (n, d = 2) => {
   const v = Number(n) || 0;
@@ -266,9 +266,12 @@ function recItem(t, opts = {}) {
     : '<span class="rec-pnl" style="color:var(--text-3);font-size:var(--fs-sm)">持仓中</span>';
   const tags = (t.reasons || []).map(r => `<i>${esc(r)}</i>`).join('') + (t.mood ? `<i class="mood">${esc(t.mood)}</i>` : '');
   const shots = t.shots || [];
+  // 只有一张图时不要套横向滚动容器——嵌套滚动在 iOS 上最容易掉帧
   const media = shots.length ? `
     <div class="rec-media">
-      <div class="rec-track">${shots.map(id => `<img src="${shotUrl(id)}" loading="lazy" decoding="async" data-view="${id}" alt="">`).join('')}</div>
+      ${shots.length === 1
+        ? `<img class="rec-single" src="${shotUrl(shots[0])}" loading="lazy" decoding="async" data-view="${shots[0]}" alt="">`
+        : `<div class="rec-track">${shots.map(id => `<img src="${shotUrl(id)}" loading="lazy" decoding="async" data-view="${id}" alt="">`).join('')}</div>`}
       ${shots.length > 1 ? `<span class="rec-count">${shots.length} 张 · 左右滑</span>` : ''}
     </div>` : '';
   return `
@@ -910,6 +913,24 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
 }
+
+/* 把高频操作合并到一帧里，拖滑块/打字时不会每次事件都重排一遍 */
+function rafBatch(fn) {
+  let scheduled = false;
+  let args = null;
+  return function (...a) {
+    args = a;
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      fn.apply(null, args);
+    });
+  };
+}
+
+const applySettingsRaf = rafBatch(() => applySettings());
+const renderSearchRaf = rafBatch(() => { renderNoteList(); renderQuotes(); });
 
 let busyCancelled = false;
 
@@ -1795,8 +1816,7 @@ function bindEvents() {
   // 搜索
   $('#searchInput').addEventListener('input', e => {
     ui.query = e.target.value;
-    renderNoteList();
-    renderQuotes();
+    renderSearchRaf();
   });
 
   // 设置
@@ -1816,7 +1836,7 @@ function bindEvents() {
   $('#fsRange').addEventListener('input', e => {
     const zi = Number(e.target.value);
     settings.zoom = [0.94, 1, 1.1][zi];
-    applySettings();
+    applySettingsRaf();
     scheduleSave();
   });
 
@@ -1828,13 +1848,13 @@ function bindEvents() {
 
   $('#wRange').addEventListener('input', e => {
     settings.boxW = Number(e.target.value) || 100;
-    applySettings();
+    applySettingsRaf();
     scheduleSave();
   });
 
   $('#hRange').addEventListener('input', e => {
     settings.boxH = Number(e.target.value) || 150;
-    applySettings();
+    applySettingsRaf();
     scheduleSave();
   });
 
@@ -1899,6 +1919,7 @@ window.addEventListener('unhandledrejection', e => {
 });
 
 document.addEventListener('DOMContentLoaded', boot);
+
 
 
 

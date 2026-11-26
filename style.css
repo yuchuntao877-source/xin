@@ -335,7 +335,8 @@ textarea { resize: none; }
   overflow: hidden;
   margin-bottom: 12px;
   cursor: pointer;
-  transition: transform .12s;
+  /* 把每张卡的布局/绘制隔离起来，滚动和重排都只影响自己 */
+  contain: layout paint;
 }
 
 .rec-media {
@@ -364,6 +365,17 @@ textarea { resize: none; }
 }
 
 .rec-track::-webkit-scrollbar { display: none; }
+
+/* 单图：直接铺满媒体框，不进滚动容器 */
+.rec-single {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: var(--rec-fit, cover);
+  object-position: center 42%;
+  display: block;
+}
 
 .rec-track img {
   flex: 0 0 100%;
