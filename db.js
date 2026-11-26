@@ -73,6 +73,17 @@ const Store = (function () {
     });
   }
 
+  /* 解码/编码有可能在某些机型上一直不回调（内存不够时会这样），
+     所以每一步都加超时，超时就当这张图失败，别把整个流程拖死 */
+  function withTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(label || '处理超时')), ms);
+      })
+    ]);
+  }
+
   /* 把任意图片源画到 canvas 再编码成 JPEG */
   async function toJpeg(source, w0, h0, limit, quality) {
     const scale = Math.min(1, limit / Math.max(w0, h0));
@@ -85,7 +96,11 @@ const Store = (function () {
     ctx.fillStyle = '#0f1218';
     ctx.fillRect(0, 0, w, h);
     ctx.drawImage(source, 0, 0, w, h);
-    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    const blob = await withTimeout(
+      new Promise(res => canvas.toBlob(res, 'image/jpeg', quality)),
+      15000,
+      '图片编码超时（这张可能太大了）'
+    );
     if (!blob) throw new Error('图片编码失败');
     return blob;
   }
@@ -94,17 +109,17 @@ const Store = (function () {
   async function decode(source) {
     if (typeof createImageBitmap === 'function') {
       try {
-        const bmp = await createImageBitmap(source);
+        const bmp = await withTimeout(createImageBitmap(source), 8000, '解码超时');
         return { img: bmp, w: bmp.width, h: bmp.height, cleanup: () => { if (bmp.close) bmp.close(); } };
       } catch (e) { /* 走下面的兜底 */ }
     }
     const url = URL.createObjectURL(source);
-    const el = await new Promise((resolve, reject) => {
+    const el = await withTimeout(new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error('这张图读不出来'));
       img.src = url;
-    });
+    }), 15000, '图片读取超时（这张可能太大了）');
     return {
       img: el,
       w: el.naturalWidth || el.width,
@@ -139,12 +154,32 @@ const Store = (function () {
     }
   }
 
+  /* 一张图只解码一次，同时产出原图和缩略图（比解码两次快一倍） */
+  async function processImage(file) {
+    const d = await decode(file);
+    try {
+      if (!d.w || !d.h) throw new Error('图片尺寸异常');
+      const full = await toJpeg(d.img, d.w, d.h, 1800, 0.86);
+      const thumb = await toJpeg(d.img, d.w, d.h, 480, 0.72);
+      return { full, thumb };
+    } finally {
+      d.cleanup();
+    }
+  }
+
+  /* 从已经画好的 canvas 直接出缩略图（裁剪后用，省一次解码） */
+  async function thumbFromCanvas(canvas, maxSide, quality) {
+    return toJpeg(canvas, canvas.width, canvas.height, maxSide || 480, quality || 0.72);
+  }
+
   return {
     open,
     newId,
     putMany,
     compressImage,
     makeThumb,
+    processImage,
+    thumbFromCanvas,
     get: (store, key) => tx(store, 'readonly', os => os.get(key)),
     put: (store, value) => tx(store, 'readwrite', os => os.put(value)),
     del: (store, key) => tx(store, 'readwrite', os => os.delete(key)),

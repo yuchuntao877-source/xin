@@ -1,4 +1,4 @@
-﻿/* ================= 设计变量 ================= */
+/* ================= 设计变量 ================= */
 :root {
   --zoom: 1;
   --fs-2xs: calc(10.5px * var(--zoom));
@@ -1562,15 +1562,27 @@ textarea { resize: none; }
   inset: 0;
   z-index: 120;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  background: rgba(6, 8, 12, .72);
+  gap: 12px;
+  background: rgba(6, 8, 12, .8);
   color: #fff;
   font-size: var(--fs-base);
 }
 
 .busy[hidden] { display: none; }
+
+.busy-cancel {
+  border: 1px solid rgba(255, 255, 255, .32);
+  background: transparent;
+  color: #fff;
+  border-radius: 999px;
+  padding: 7px 20px;
+  font-size: var(--fs-sm);
+}
+
+.busy-cancel[hidden] { display: none; }
 
 .busy-dot {
   width: 18px;

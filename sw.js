@@ -4,7 +4,7 @@
    策略：缓存优先 + 后台更新（stale-while-revalidate），
         离线可用；发新版后第二次打开即更新。
    ========================================================== */
-const CACHE = 'trade-diary-v6';
+const CACHE = 'trade-diary-v7';
 const SHELL = [
   './',
   './index.html',
@@ -65,6 +65,7 @@ self.addEventListener('fetch', event => {
     return new Response('离线且未缓存', { status: 503, statusText: 'Offline' });
   })());
 });
+
 
 
 

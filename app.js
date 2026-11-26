@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /* ==========================================================
    交易手记 v1.0
@@ -190,8 +190,10 @@ async function loadAll() {
    图片
    ========================================================== */
 async function addImage(file) {
-  const blob = await Store.compressImage(file);          // 原图（1800px / 0.86）
-  const thumb = await Store.makeThumb(blob);             // 缩略图（480px / 0.72）
+  if (file.size > 15 * 1024 * 1024) {
+    throw new Error('这张图超过 15MB，先在相册里裁小一点');
+  }
+  const { full: blob, thumb } = await Store.processImage(file);   // 一次解码，出两张
   const id = Store.newId();
   await Store.put('img', {
     id, blob, bytes: blob.size,
@@ -615,13 +617,31 @@ function renderMe() {
     ? '' : 'var(--star)';
 }
 
+const dirtyView = { home: true, trades: true, notes: true, me: true };
+
+function renderActiveView() {
+  const active = $('.view.is-active');
+  if (!active) return;
+  const name = active.dataset.view;
+  if (!dirtyView[name]) return;
+  if (name === 'home') renderHome();
+  else if (name === 'trades') renderTrades();
+  else if (name === 'notes') { renderCalendar(); renderNoteList(); renderQuotes(); }
+  else if (name === 'me') renderMe();
+  dirtyView[name] = false;
+}
+
+/* 只渲染当前看得见的那一页，其余标记为"脏"，切过去再渲染 —— 一次保存不用重画四个页面 */
 function renderAll() {
-  renderHome();
-  renderTrades();
-  renderCalendar();
-  renderNoteList();
-  renderQuotes();
-  renderMe();
+  dirtyView.home = true;
+  dirtyView.trades = true;
+  dirtyView.notes = true;
+  dirtyView.me = true;
+  renderActiveView();
+}
+
+function markDirty(name) {
+  if (name in dirtyView) dirtyView[name] = true;
 }
 
 /* ==========================================================
@@ -833,7 +853,7 @@ async function applyCrop() {
     return toast('裁剪失败，换张图试试');
   }
 
-  const thumb = await Store.makeThumb(blob);
+  const thumb = await Store.thumbFromCanvas(cv);
   const id = Store.newId();
   await Store.put('img', {
     id, blob, bytes: blob.size,
@@ -863,8 +883,13 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
 }
 
-function showBusy(text) {
+let busyCancelled = false;
+
+function showBusy(text, cancellable) {
+  busyCancelled = false;
   $('#busyText').textContent = text || '处理中…';
+  const btn = $('#busyCancel');
+  if (btn) btn.hidden = !cancellable;
   $('#busy').hidden = false;
 }
 
@@ -936,6 +961,13 @@ function updatePnlHint() {
   } else {
     hint.textContent = '没有对应买入记录，直接填金额';
   }
+}
+
+/* 每敲一个字都重算一遍持仓会比较浪费，简单防抖一下 */
+let pnlTimer = null;
+function updatePnlHintSoon() {
+  clearTimeout(pnlTimer);
+  pnlTimer = setTimeout(updatePnlHint, 120);
 }
 
 async function saveTrade() {
@@ -1135,8 +1167,9 @@ function togglePin(id) {
   const r = quotes.find(x => x.id === id);
   if (!r) return;
   r.pinned = !r.pinned;
-  renderQuotes();
-  renderHome();
+  markDirty('notes');
+  markDirty('home');
+  renderActiveView();
   scheduleSave();
   toast(r.pinned ? '已置顶' : '已取消置顶');
 }
@@ -1188,7 +1221,8 @@ async function exportBackup() {
 
     settings.lastExport = new Date().toISOString();
     await saveNow();
-    renderMe();
+    markDirty('me');
+    renderActiveView();
     toast(`已导出 ${(blob.size / 1048576).toFixed(1)}MB${missing ? '，' + missing + ' 张图缺失' : ''}`);
   } catch (e) {
     toast('导出失败：' + (e.message || e));
@@ -1294,6 +1328,7 @@ function switchView(name) {
   $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.go === name));
   const scroller = target.querySelector('.scroll');
   if (scroller) scroller.scrollTop = 0;
+  renderActiveView();
 }
 
 /* ==========================================================
@@ -1536,7 +1571,13 @@ function bindEvents() {
   }));
 
   ['#fCode', '#fName', '#fPrice', '#fQty', '#fFee'].forEach(sel => {
-    $(sel).addEventListener('input', updatePnlHint);
+    $(sel).addEventListener('input', updatePnlHintSoon);
+  });
+
+  $('#busyCancel').addEventListener('click', () => {
+    busyCancelled = true;
+    hideBusy();
+    toast('已取消');
   });
 
   // 标签
@@ -1569,31 +1610,41 @@ function bindEvents() {
     if (!list.length) return;
 
     const arr = [];
-    showBusy(`处理图片 0/${list.length}`);
+    const failed = [];
+    showBusy(`处理图片 0/${list.length}`, true);
     try {
       for (let i = 0; i < list.length; i++) {
+        if (busyCancelled) break;
         setBusyText(`处理图片 ${i + 1}/${list.length}`);
         // 让浏览器先把上面的文字画出来，再干重活，避免看起来像卡死
         await new Promise(r => setTimeout(r, 30));
         try {
           arr.push(await addImage(list[i]));
         } catch (err) {
-          toast('有一张图处理失败');
+          failed.push(err && err.message ? err.message : '处理失败');
         }
       }
     } finally {
       hideBusy();
     }
 
-    if (!arr.length) return;
-    if (who === 'draft') {
-      ui.draftShots.push(...arr);
-      renderShots('#fShots', ui.draftShots, 'draft');
-    } else {
-      ui.reviewShots.push(...arr);
-      renderShots('#rShots', ui.reviewShots, 'review');
+    if (arr.length) {
+      if (who === 'draft') {
+        ui.draftShots.push(...arr);
+        renderShots('#fShots', ui.draftShots, 'draft');
+      } else {
+        ui.reviewShots.push(...arr);
+        renderShots('#rShots', ui.reviewShots, 'review');
+      }
     }
-    toast(`已加 ${arr.length} 张图`);
+
+    if (failed.length) {
+      toast(`成功 ${arr.length} 张，失败 ${failed.length} 张（${failed[0]}）`);
+    } else if (arr.length) {
+      toast(`已加 ${arr.length} 张图`);
+    } else if (busyCancelled) {
+      toast('已取消');
+    }
   }
 
   $('#fShotInput').addEventListener('change', async e => {
@@ -1790,3 +1841,4 @@ window.addEventListener('unhandledrejection', e => {
 });
 
 document.addEventListener('DOMContentLoaded', boot);
+
