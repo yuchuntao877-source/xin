@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="dark" data-updown="cn">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f1218">
 <meta name="description" content="只记两件事：每天的心得，和每一笔买卖的心得。截图、盈亏都在本机，不上传。">
 <title>交易手记</title>
@@ -331,7 +331,7 @@
       <span class="flabel">K 线截图</span>
       <div class="shots" id="fShots"></div>
       <input type="file" id="fShotInput" accept="image/*" multiple hidden>
-      <span class="fhelp">选好图能直接看大图，点右上角 ✕ 可删掉；可一次选多张</span>
+      <span class="fhelp">选好图后可以「裁剪」只留 K 线那一段；点图看大图，双指放大；✕ 删除</span>
     </div>
 
     <label class="field"><span>这笔的心得</span>
@@ -472,10 +472,29 @@
   </div>
 </section>
 
-<!-- ============ 看大图 ============ -->
+<!-- ============ 看大图（双指 / 双击放大） ============ -->
 <div class="viewer" id="viewer" aria-hidden="true">
   <button class="viewer-close" id="viewerClose" aria-label="关闭">✕</button>
-  <img id="viewerImg" alt="">
+  <div class="viewer-stage" id="viewerStage">
+    <img id="viewerImg" alt="">
+  </div>
+  <div class="viewer-tip">双指放大 · 双击放大 · 放大后单指拖动</div>
+</div>
+
+<!-- ============ 裁剪 ============ -->
+<div class="cropper" id="cropper" hidden aria-hidden="true">
+  <div class="crop-hd">
+    <button class="txt-btn" id="cropCancel">取消</button>
+    <span class="crop-title">拖动框选要保留的区域</span>
+    <button class="txt-btn accent" id="cropDone">完成</button>
+  </div>
+  <div class="crop-body">
+    <div class="crop-stage" id="cropStage">
+      <img id="cropImg" alt="">
+      <div class="crop-box" id="cropBox"></div>
+    </div>
+  </div>
+  <div class="crop-tip">在图上拖一个框；框太小会自动还原成整张</div>
 </div>
 
 <div class="toast" id="toast"></div>

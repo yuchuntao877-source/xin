@@ -1,10 +1,10 @@
-/* ==========================================================
+﻿/* ==========================================================
    交易手记 · Service Worker
    只缓存应用外壳（HTML/CSS/JS/图标），数据在 IndexedDB 里，不经过这里。
    策略：缓存优先 + 后台更新（stale-while-revalidate），
         离线可用；发新版后第二次打开即更新。
    ========================================================== */
-const CACHE = 'trade-diary-v1';
+const CACHE = 'trade-diary-v2';
 const SHELL = [
   './',
   './index.html',
@@ -65,3 +65,4 @@ self.addEventListener('fetch', event => {
     return new Response('离线且未缓存', { status: 503, statusText: 'Offline' });
   })());
 });
+

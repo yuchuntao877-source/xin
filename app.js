@@ -237,6 +237,7 @@ function renderShots(sel, arr, who) {
   box.innerHTML = arr.map((id, i) => `
     <div class="shot">
       <img src="${shotUrl(id)}" data-view alt="">
+      <button class="shot-crop" data-crop="${i}" data-who="${who}">裁剪</button>
       <button class="shot-x" data-rm="${i}" data-who="${who}" aria-label="删除">✕</button>
     </div>`).join('') + `
     <button class="shot-add" type="button" data-add="${who}">
@@ -620,8 +621,31 @@ function closeSheet() {
   ui.sheet = null;
 }
 
+/* ---- 看大图：双指 / 双击 / 滚轮缩放 ---- */
+const zoom = { scale: 1, tx: 0, ty: 0 };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+function applyZoom() {
+  $('#viewerImg').style.transform = `translate(${zoom.tx}px, ${zoom.ty}px) scale(${zoom.scale})`;
+}
+
+function clampPan() {
+  const maxX = (zoom.scale - 1) * window.innerWidth / 2;
+  const maxY = (zoom.scale - 1) * window.innerHeight / 2;
+  zoom.tx = clamp(zoom.tx, -maxX, maxX);
+  zoom.ty = clamp(zoom.ty, -maxY, maxY);
+}
+
+function resetZoom() {
+  zoom.scale = 1;
+  zoom.tx = 0;
+  zoom.ty = 0;
+  applyZoom();
+}
+
 function openViewer(src) {
   $('#viewerImg').src = src;
+  resetZoom();
   $('#viewer').classList.add('show');
   $('#viewer').setAttribute('aria-hidden', 'false');
 }
@@ -629,6 +653,99 @@ function openViewer(src) {
 function closeViewer() {
   $('#viewer').classList.remove('show');
   $('#viewer').setAttribute('aria-hidden', 'true');
+  resetZoom();
+}
+
+/* ---- 裁剪 ---- */
+const cropState = {
+  open: false, who: null, index: -1, oldId: null,
+  imgEl: null, natW: 0, natH: 0, dispW: 0, dispH: 0,
+  box: { x: 0, y: 0, w: 0, h: 0 }, drag: null
+};
+
+function paintCropBox() {
+  const b = cropState.box;
+  const el = $('#cropBox');
+  el.style.left = b.x + 'px';
+  el.style.top = b.y + 'px';
+  el.style.width = b.w + 'px';
+  el.style.height = b.h + 'px';
+}
+
+function layoutCropper() {
+  const body = $('.crop-body');
+  const stage = $('#cropStage');
+  const availW = Math.max(80, body.clientWidth - 24);
+  const availH = Math.max(80, body.clientHeight - 12);
+  const scale = Math.min(availW / cropState.natW, availH / cropState.natH);
+  const w = Math.max(40, Math.round(cropState.natW * scale));
+  const h = Math.max(40, Math.round(cropState.natH * scale));
+  cropState.dispW = w;
+  cropState.dispH = h;
+  stage.style.width = w + 'px';
+  stage.style.height = h + 'px';
+  cropState.box = { x: 0, y: 0, w, h };
+  paintCropBox();
+}
+
+function openCropper(index, who) {
+  const arr = who === 'draft' ? ui.draftShots : ui.reviewShots;
+  const id = arr[index];
+  if (!id) return;
+
+  const img = new Image();
+  img.onload = () => {
+    cropState.open = true;
+    cropState.who = who;
+    cropState.index = index;
+    cropState.oldId = id;
+    cropState.imgEl = img;
+    cropState.natW = img.naturalWidth || 1;
+    cropState.natH = img.naturalHeight || 1;
+    $('#cropImg').src = shotUrl(id);
+    $('#cropper').hidden = false;
+    requestAnimationFrame(layoutCropper);
+  };
+  img.onerror = () => toast('这张图读不出来');
+  img.src = shotUrl(id);
+}
+
+function closeCropper() {
+  $('#cropper').hidden = true;
+  cropState.open = false;
+  cropState.imgEl = null;
+  cropState.drag = null;
+}
+
+async function applyCrop() {
+  if (!cropState.open) return;
+  const b = cropState.box;
+  const k = cropState.natW / cropState.dispW;
+  const sx = Math.max(0, Math.round(b.x * k));
+  const sy = Math.max(0, Math.round(b.y * k));
+  const sw = Math.min(cropState.natW - sx, Math.max(8, Math.round(b.w * k)));
+  const sh = Math.min(cropState.natH - sy, Math.max(8, Math.round(b.h * k)));
+
+  const cv = document.createElement('canvas');
+  cv.width = sw;
+  cv.height = sh;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(cropState.imgEl, sx, sy, sw, sh, 0, 0, sw, sh);
+
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
+  if (!blob) return toast('裁剪失败，换张图试试');
+
+  const id = Store.newId();
+  await Store.put('img', { id, blob, bytes: blob.size, at: Date.now() });
+  imgUrls.set(id, URL.createObjectURL(blob));
+  imgBytes += blob.size;
+
+  const arr = cropState.who === 'draft' ? ui.draftShots : ui.reviewShots;
+  arr[cropState.index] = id;
+  const sel = cropState.who === 'draft' ? '#fShots' : '#rShots';
+  closeCropper();
+  renderShots(sel, arr, cropState.who);
+  toast('已裁剪，记得点保存');
 }
 
 let toastTimer = null;
@@ -1046,12 +1163,175 @@ function bindEvents() {
   $('#overlay').addEventListener('click', closeSheet);
   $$('[data-close]').forEach(b => b.addEventListener('click', closeSheet));
   $('#viewerClose').addEventListener('click', closeViewer);
-  $('#viewer').addEventListener('click', e => { if (e.target.id === 'viewer') closeViewer(); });
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     closeViewer();
     closeSheet();
+    closeCropper();
   });
+
+  /* ---- 大图缩放手势 ---- */
+  const vStage = $('#viewerStage');
+  const pts = new Map();
+  let pinchStart = 0;
+  let pinchBase = 1;
+  let dragStart = null;
+  let dragging = false;
+  let suppressClick = false;
+  let lastTap = 0;
+  let lastTapPos = { x: 0, y: 0 };
+
+  vStage.addEventListener('pointerdown', e => {
+    vStage.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      const [a, b] = Array.from(pts.values());
+      pinchStart = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      pinchBase = zoom.scale;
+    }
+    if (pts.size === 1) {
+      dragStart = { x: e.clientX, y: e.clientY, tx: zoom.tx, ty: zoom.ty };
+      dragging = false;
+    }
+  });
+
+  vStage.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pts.size === 2) {
+      const [a, b] = Array.from(pts.values());
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      zoom.scale = clamp(pinchBase * (d / pinchStart), 1, 6);
+      clampPan();
+      applyZoom();
+      return;
+    }
+
+    if (pts.size === 1 && dragStart) {
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      if (Math.abs(dx) + Math.abs(dy) > 6) dragging = true;
+      if (dragging && zoom.scale > 1) {
+        zoom.tx = dragStart.tx + dx;
+        zoom.ty = dragStart.ty + dy;
+        clampPan();
+        applyZoom();
+      }
+    }
+  });
+
+  const endPointer = e => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinchStart = 0;
+    if (pts.size === 1) {
+      const p = Array.from(pts.values())[0];
+      dragStart = { x: p.x, y: p.y, tx: zoom.tx, ty: zoom.ty };
+      return;
+    }
+    if (pts.size > 0) return;
+
+    const moved = dragging;
+    dragStart = null;
+    dragging = false;
+    if (moved) {
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 60);
+    }
+
+    const t = Date.now();
+    if (!moved && t - lastTap < 320 &&
+        Math.abs(e.clientX - lastTapPos.x) < 36 && Math.abs(e.clientY - lastTapPos.y) < 36) {
+      if (zoom.scale > 1.2) {
+        resetZoom();
+      } else {
+        zoom.scale = 2.6;
+        zoom.tx = 0;
+        zoom.ty = 0;
+        applyZoom();
+      }
+      lastTap = 0;
+    } else {
+      lastTap = t;
+      lastTapPos = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  vStage.addEventListener('pointerup', endPointer);
+  vStage.addEventListener('pointercancel', endPointer);
+
+  vStage.addEventListener('click', e => {
+    if (suppressClick) return;
+    if (e.target === vStage) closeViewer();
+  });
+
+  vStage.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoom.scale = clamp(zoom.scale * (e.deltaY < 0 ? 1.12 : 0.9), 1, 6);
+    if (zoom.scale === 1) { zoom.tx = 0; zoom.ty = 0; }
+    clampPan();
+    applyZoom();
+  }, { passive: false });
+
+  /* ---- 裁剪手势 ---- */
+  const cStage = $('#cropStage');
+
+  cStage.addEventListener('pointerdown', e => {
+    if (!cropState.open) return;
+    const r = cStage.getBoundingClientRect();
+    const x = clamp(e.clientX - r.left, 0, cropState.dispW);
+    const y = clamp(e.clientY - r.top, 0, cropState.dispH);
+    const b = cropState.box;
+    const inside = x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+    cStage.setPointerCapture(e.pointerId);
+    if (inside) {
+      cropState.drag = { mode: 'move', sx: x, sy: y, ox: b.x, oy: b.y };
+    } else {
+      cropState.drag = { mode: 'new', sx: x, sy: y };
+      cropState.box = { x, y, w: 0, h: 0 };
+      paintCropBox();
+    }
+  });
+
+  cStage.addEventListener('pointermove', e => {
+    const d = cropState.drag;
+    if (!d) return;
+    const r = cStage.getBoundingClientRect();
+    const x = clamp(e.clientX - r.left, 0, cropState.dispW);
+    const y = clamp(e.clientY - r.top, 0, cropState.dispH);
+    if (d.mode === 'move') {
+      const w = cropState.box.w;
+      const h = cropState.box.h;
+      cropState.box = {
+        x: clamp(d.ox + (x - d.sx), 0, Math.max(0, cropState.dispW - w)),
+        y: clamp(d.oy + (y - d.sy), 0, Math.max(0, cropState.dispH - h)),
+        w, h
+      };
+    } else {
+      cropState.box = {
+        x: Math.min(d.sx, x),
+        y: Math.min(d.sy, y),
+        w: Math.abs(x - d.sx),
+        h: Math.abs(y - d.sy)
+      };
+    }
+    paintCropBox();
+  });
+
+  const endCropDrag = () => {
+    if (!cropState.drag) return;
+    cropState.drag = null;
+    const b = cropState.box;
+    if (b.w < 30 || b.h < 30) {
+      cropState.box = { x: 0, y: 0, w: cropState.dispW, h: cropState.dispH };
+      paintCropBox();
+    }
+  };
+
+  cStage.addEventListener('pointerup', endCropDrag);
+  cStage.addEventListener('pointercancel', endCropDrag);
+  $('#cropCancel').addEventListener('click', closeCropper);
+  $('#cropDone').addEventListener('click', applyCrop);
 
   // 买 / 卖
   $$('#sideSeg button').forEach(b => b.addEventListener('click', () => {
@@ -1120,6 +1400,13 @@ function bindEvents() {
   $('#rShotInput').addEventListener('change', async e => {
     await handleFiles(e.target.files, 'review');
     e.target.value = '';
+  });
+
+  // 截图：裁剪
+  document.addEventListener('click', e => {
+    const c = e.target.closest('[data-crop]');
+    if (!c) return;
+    openCropper(Number(c.dataset.crop), c.dataset.who);
   });
 
   // 截图：删除
