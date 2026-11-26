@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-updown="cn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0f1218">
+<meta name="description" content="只记两件事：每天的心得，和每一笔买卖的心得。截图、盈亏都在本机，不上传。">
+<title>交易手记</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="交易手记">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="fatal" id="fatal" hidden></div>
+
+<div class="phone">
+  <div class="app">
+
+    <!-- ============ 今日 ============ -->
+    <section class="view is-active" id="view-home" data-view="home">
+      <header class="hdr">
+        <div class="hdr-l">
+          <h1 class="hdr-title" id="homeDate">今天</h1>
+          <p class="hdr-sub" id="homeWeek">—</p>
+        </div>
+        <button class="icon-btn" data-go="me" aria-label="设置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+            <circle cx="12" cy="12" r="3.2"/>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 8.9v.05a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.02z"/>
+          </svg>
+        </button>
+      </header>
+
+      <div class="scroll">
+        <div class="hero">
+          <div class="hero-label">今日盈亏</div>
+          <div class="hero-num num" id="heroPnl">—</div>
+          <div class="hero-meta" id="heroMeta">今天还没有交易记录</div>
+        </div>
+
+        <div class="card" id="onboard" hidden>
+          <div class="card-hd"><h2>三步开始</h2><span class="hint">第一次用看这里</span></div>
+          <ol class="guide">
+            <li>点下面「＋ 记一笔」，把 K 线截图一起传上来</li>
+            <li>图下面写这笔为什么买、为什么卖，亏了也照写</li>
+            <li>收盘后写「今日心得」，一个月后回来看自己</li>
+          </ol>
+        </div>
+
+        <div class="card-hd" style="padding:2px 2px 8px">
+          <h2>今日操作</h2>
+          <span class="hint">点图片放大看</span>
+        </div>
+        <div id="todayTrades" class="reclist"></div>
+
+        <div class="card">
+          <div class="card-hd">
+            <h2>今日心得</h2>
+            <span class="pill-num" id="noteStar">还没写</span>
+          </div>
+          <div id="todayNote"></div>
+        </div>
+
+        <div class="cta-row">
+          <button class="btn btn-primary" data-sheet="note">写今日心得</button>
+          <button class="btn btn-ghost" data-sheet="trade">＋ 记一笔</button>
+        </div>
+
+        <div class="card" style="margin-top:4px">
+          <div class="card-hd"><h2>最近</h2><button class="link-btn" data-go="notes">全部 →</button></div>
+          <div id="recentNotes"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd">
+            <h2>大佬说</h2>
+            <button class="link-btn" id="homeQuoteAll">全部 →</button>
+          </div>
+          <div id="homeQuote"></div>
+        </div>
+
+        <p class="foot-note">数据只存在这台设备上，不上传服务器。<br>清浏览器数据会丢，记得定期「导出备份」。</p>
+      </div>
+    </section>
+
+    <!-- ============ 交易 ============ -->
+    <section class="view" id="view-trades" data-view="trades">
+      <header class="hdr">
+        <div class="hdr-l">
+          <h1 class="hdr-title">交易</h1>
+          <p class="hdr-sub" id="tradeSub">还没有记录</p>
+        </div>
+        <button class="btn btn-sm btn-primary" data-sheet="trade">＋ 记一笔</button>
+      </header>
+
+      <div class="scroll">
+        <div class="seg" id="tradeSeg">
+          <button class="on" data-sub="flow">流水</button>
+          <button data-sub="pos">持仓</button>
+          <button data-sub="stock">个股</button>
+        </div>
+
+        <div id="flowPane"></div>
+
+        <div id="stockPane" hidden>
+          <div class="card-hd" style="padding:0 2px 8px">
+            <h2 style="margin:0;font-size:var(--fs-lg);font-weight:600">做过的股票</h2>
+            <span class="hint">点开看这只票的全部记录</span>
+          </div>
+          <div class="list" id="stockList"></div>
+        </div>
+
+        <div id="posPane" hidden>
+          <div class="card">
+            <div class="card-hd"><h2>当前持仓</h2><span class="hint">按你的买卖单推算</span></div>
+            <div id="posDetail" class="poslist"></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat"><b class="num" id="stCount">0</b><span>持仓只数</span></div>
+            <div class="stat"><b class="num" id="stCost">—</b><span>占用资金</span></div>
+            <div class="stat"><b class="num" id="stPnl">—</b><span>累计已实现</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 心得 ============ -->
+    <section class="view" id="view-notes" data-view="notes">
+      <header class="hdr">
+        <div class="hdr-l">
+          <h1 class="hdr-title">心得</h1>
+          <p class="hdr-sub" id="noteSub">0 篇</p>
+        </div>
+      </header>
+
+      <div class="scroll">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5" stroke-linecap="round"/>
+          </svg>
+          <input id="searchInput" placeholder="搜心得、股票名、语录">
+        </div>
+
+        <div class="seg" id="noteSeg">
+          <button class="on" data-ntab="mine">我的心得</button>
+          <button data-ntab="quotes">大佬语录</button>
+        </div>
+
+        <div id="minePane">
+          <div class="card">
+            <div class="cal-hd">
+              <button class="icon-btn" id="calPrev" aria-label="上个月">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 6 8.5 12l6 6"/></svg>
+              </button>
+              <span class="cal-title" id="calTitle">—</span>
+              <button class="icon-btn" id="calNext" aria-label="下个月">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+            <div class="cal-week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+            <div class="cal-grid" id="calGrid"></div>
+            <div class="cal-legend">
+              <span><i class="lg lg-win"></i>盈利日</span>
+              <span><i class="lg lg-loss"></i>亏损日</span>
+              <span><i class="lg lg-dot"></i>有记录</span>
+            </div>
+          </div>
+
+          <div class="stat-row">
+            <div class="stat"><b class="num" id="calDays">0</b><span>本月记录</span></div>
+            <div class="stat"><b class="num" id="calPnl">—</b><span>本月盈亏</span></div>
+            <div class="stat"><b class="num" id="calWin">—</b><span>盈利天数占比</span></div>
+          </div>
+
+          <div class="card-hd" style="padding:0 2px 8px">
+            <h2 style="margin:0;font-size:var(--fs-lg);font-weight:600" id="listTitle">全部记录</h2>
+            <span class="hint" id="listCount"></span>
+          </div>
+          <div id="noteList"></div>
+        </div>
+
+        <div id="quotePane" hidden>
+          <div class="quote-hd">
+            <span class="hint" id="quoteCount">0 条</span>
+            <button class="btn btn-sm btn-primary" data-sheet="quote">＋ 加一条</button>
+          </div>
+          <div class="tagfilter" id="tagFilter"></div>
+          <div id="quoteList"></div>
+        </div>
+
+        <p class="foot-note" id="notesFoot">点任意一天，补写那天的记录</p>
+      </div>
+    </section>
+
+    <!-- ============ 我的 ============ -->
+    <section class="view" id="view-me" data-view="me">
+      <header class="hdr">
+        <div class="hdr-l">
+          <h1 class="hdr-title">我的</h1>
+          <p class="hdr-sub">单机 · 不联网 · 不上传</p>
+        </div>
+      </header>
+
+      <div class="scroll">
+        <div class="card me-card">
+          <div class="me-av">手</div>
+          <div class="me-info">
+            <b>我的交易手记</b>
+            <span id="meSince">还没有记录</span>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat"><b class="num" id="meTrades">0</b><span>交易笔数</span></div>
+          <div class="stat"><b class="num" id="meShots">0</b><span>K线截图</span></div>
+          <div class="stat"><b class="num" id="meSize">—</b><span>截图占用</span></div>
+        </div>
+
+        <div class="list">
+          <button class="row" id="exportBtn">
+            <span class="r-ic">↓</span>
+            <span class="r-main">
+              <span class="r-title">导出备份</span>
+              <span class="r-desc" id="lastExportText">文字 + 截图打包成一个 zip</span>
+            </span>
+            <span class="chev">›</span>
+          </button>
+          <button class="row" id="importBtn">
+            <span class="r-ic">↑</span>
+            <span class="r-main">
+              <span class="r-title">导入备份</span>
+              <span class="r-desc">从 zip 恢复全部记录（会覆盖当前数据）</span>
+            </span>
+            <span class="chev">›</span>
+          </button>
+          <input type="file" id="importFile" accept=".zip,application/zip" hidden>
+        </div>
+
+        <div class="list">
+          <div class="row">
+            <span class="r-ic">◐</span>
+            <span class="r-main"><span class="r-title">深色模式</span><span class="r-desc">晚上看不刺眼</span></span>
+            <button class="switch on" id="swTheme" role="switch" aria-checked="true"></button>
+          </div>
+          <div class="row">
+            <span class="r-ic">红</span>
+            <span class="r-main"><span class="r-title">红涨绿跌</span><span class="r-desc">关掉则切换为国际配色</span></span>
+            <button class="switch on" id="swUpdown" role="switch" aria-checked="true"></button>
+          </div>
+          <div class="row">
+            <span class="r-ic">字</span>
+            <span class="r-main"><span class="r-title">字号</span><span class="r-desc" id="fsLabel">标准</span></span>
+            <input type="range" min="0" max="2" step="1" value="1" id="fsRange" class="range">
+          </div>
+        </div>
+
+        <div class="list">
+          <button class="row" id="aboutBtn">
+            <span class="r-ic">i</span>
+            <span class="r-main"><span class="r-title">版本</span><span class="r-desc">v1.0 · 单文件网页应用，可加到主屏幕</span></span>
+            <span class="chev">›</span>
+          </button>
+          <button class="row" id="clearBtn">
+            <span class="r-ic">!</span>
+            <span class="r-main"><span class="r-title">清空本地数据</span><span class="r-desc">截图和文字一起删，需二次确认</span></span>
+            <span class="chev">›</span>
+          </button>
+        </div>
+
+        <p class="foot-note">数据存在这台设备的 IndexedDB 里，不上传任何服务器。<br>唯一的风险是清浏览器数据，所以定期导出备份。</p>
+      </div>
+    </section>
+
+  </div>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab on" data-go="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <circle cx="12" cy="12" r="3.6"/>
+        <path d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>
+      </svg>
+      <span>今日</span>
+    </button>
+    <button class="tab" data-go="trades">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <path d="M4 7h16M4 12h11M4 17h7"/>
+      </svg>
+      <span>交易</span>
+    </button>
+    <button class="tab" data-go="notes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <rect x="3.5" y="5" width="17" height="16" rx="3.2"/>
+        <path d="M8 3.2v3.4M16 3.2v3.4M3.5 10.2h17"/>
+      </svg>
+      <span>心得</span>
+    </button>
+    <button class="tab" data-go="me">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <circle cx="12" cy="8.2" r="3.5"/>
+        <path d="M4.8 20c1.2-3.7 3.9-5.5 7.2-5.5s6 1.8 7.2 5.5"/>
+      </svg>
+      <span>我的</span>
+    </button>
+  </nav>
+</div>
+
+<div class="overlay" id="overlay"></div>
+
+<!-- ============ 记一笔 / 编辑 ============ -->
+<section class="sheet" id="sheet-trade" aria-hidden="true" aria-label="记一笔">
+  <div class="sheet-hd">
+    <button class="txt-btn" data-close>取消</button>
+    <h2 id="tradeTitle">记一笔</h2>
+    <button class="txt-btn accent" id="saveTrade">保存</button>
+  </div>
+  <div class="sheet-body">
+    <div class="seg seg-lg" id="sideSeg">
+      <button class="on" data-side="buy">买入</button>
+      <button data-side="sell">卖出</button>
+    </div>
+
+    <div class="field-row">
+      <label class="field"><span>股票名称</span><input id="fName" placeholder="如 中际旭创"></label>
+      <label class="field"><span>代码（可留空）</span><input id="fCode" inputmode="numeric" placeholder="300308" maxlength="6"></label>
+    </div>
+
+    <div class="field-block">
+      <span class="flabel">K 线截图</span>
+      <div class="shots" id="fShots"></div>
+      <input type="file" id="fShotInput" accept="image/*" multiple hidden>
+      <span class="fhelp">选好图能直接看大图，点右上角 ✕ 可删掉；可一次选多张</span>
+    </div>
+
+    <label class="field"><span>这笔的心得</span>
+      <textarea id="fNote" rows="5" placeholder="为什么买 / 为什么卖，当时怎么想的，事后看对不对"></textarea>
+    </label>
+
+    <div class="field-row">
+      <label class="field"><span>日期</span><input type="date" id="fDate"></label>
+      <label class="field"><span>成交价</span><input id="fPrice" inputmode="decimal" placeholder="0.00"></label>
+    </div>
+
+    <div class="field-row">
+      <label class="field"><span>数量（股）</span><input id="fQty" inputmode="numeric" placeholder="100"></label>
+      <label class="field"><span>手续费</span><input id="fFee" inputmode="decimal" placeholder="留空按万2.5估算"></label>
+    </div>
+
+    <label class="field" id="pnlField" hidden><span>本次盈亏</span>
+      <input id="fPnl" inputmode="decimal" placeholder="卖出时填">
+      <em id="fPnlHint"></em>
+    </label>
+
+    <div class="field-block">
+      <span class="flabel">买卖理由（可多选）</span>
+      <div class="chips" data-multi="reason">
+        <button class="chip" data-val="计划内">计划内</button>
+        <button class="chip" data-val="突破">突破</button>
+        <button class="chip" data-val="回踩低吸">回踩低吸</button>
+        <button class="chip" data-val="追涨">追涨</button>
+        <button class="chip" data-val="打板">打板</button>
+        <button class="chip" data-val="听消息">听消息</button>
+        <button class="chip" data-val="情绪单">情绪单</button>
+      </div>
+    </div>
+
+    <div class="field-block">
+      <span class="flabel">当时心态</span>
+      <div class="chips" data-single="mood">
+        <button class="chip" data-val="冷静">冷静</button>
+        <button class="chip" data-val="踏实">踏实</button>
+        <button class="chip" data-val="急躁">急躁</button>
+        <button class="chip" data-val="FOMO">FOMO</button>
+        <button class="chip" data-val="恐惧">恐惧</button>
+        <button class="chip" data-val="报复">报复</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 每日心得 ============ -->
+<section class="sheet sheet-full" id="sheet-note" aria-hidden="true" aria-label="每日心得">
+  <div class="sheet-hd">
+    <button class="txt-btn" data-close>关闭</button>
+    <h2 id="revDate">今日心得</h2>
+    <button class="txt-btn accent" id="saveNote">保存</button>
+  </div>
+  <div class="sheet-body">
+    <div class="field-block">
+      <span class="flabel">今天的手感</span>
+      <div class="stars" id="stars">
+        <button data-star="1">★</button><button data-star="2">★</button><button data-star="3">★</button>
+        <button data-star="4" class="on">★</button><button data-star="5">★</button>
+      </div>
+    </div>
+
+    <div class="field-block">
+      <span class="flabel">今天的交易（勾选做得对的）</span>
+      <div class="check-list" id="revTrades"></div>
+    </div>
+
+    <div class="field-block">
+      <span class="flabel">今天的截图（可选）</span>
+      <div class="shots" id="rShots"></div>
+      <input type="file" id="rShotInput" accept="image/*" multiple hidden>
+    </div>
+
+    <label class="field"><span>今日心得</span>
+      <textarea id="rText" rows="7" placeholder="今天最该记住的一句话 / 哪里做得不对 / 下次怎么改"></textarea>
+    </label>
+
+    <label class="field"><span>明日计划</span>
+      <textarea id="rPlan" rows="2" placeholder="明天只做一件事："></textarea>
+    </label>
+  </div>
+</section>
+
+<!-- ============ 交易详情 ============ -->
+<section class="sheet sheet-full" id="sheet-detail" aria-hidden="true" aria-label="交易详情">
+  <div class="sheet-hd">
+    <button class="txt-btn" data-close>关闭</button>
+    <h2>交易详情</h2>
+    <button class="txt-btn accent" id="editTrade">编辑</button>
+  </div>
+  <div class="sheet-body" id="detailBody"></div>
+</section>
+
+<!-- ============ 个股档案 ============ -->
+<section class="sheet sheet-full" id="sheet-stock" aria-hidden="true" aria-label="个股档案">
+  <div class="sheet-hd">
+    <button class="txt-btn" data-close>关闭</button>
+    <h2 id="stockTitle">个股档案</h2>
+    <span style="min-width:46px"></span>
+  </div>
+  <div class="sheet-body" id="stockBody"></div>
+</section>
+
+<!-- ============ 语录 ============ -->
+<section class="sheet" id="sheet-quote" aria-hidden="true" aria-label="语录">
+  <div class="sheet-hd">
+    <button class="txt-btn" data-close>取消</button>
+    <h2 id="quoteTitle">加一条语录</h2>
+    <button class="txt-btn accent" id="saveQuote">保存</button>
+  </div>
+  <div class="sheet-body">
+    <label class="field">
+      <span>语录内容</span>
+      <textarea id="qText" rows="5" placeholder="把大佬那句话原样抄下来"></textarea>
+    </label>
+    <label class="field">
+      <span>出处（谁说的 / 哪篇文章）</span>
+      <input id="qSource" placeholder="如：某私募访谈、雪球长文">
+    </label>
+    <div class="field-block">
+      <span class="flabel">标签</span>
+      <div class="chips" data-multi="qtag">
+        <button class="chip" data-val="仓位">仓位</button>
+        <button class="chip" data-val="止损">止损</button>
+        <button class="chip" data-val="心态">心态</button>
+        <button class="chip" data-val="选股">选股</button>
+        <button class="chip" data-val="周期">周期</button>
+        <button class="chip" data-val="常识">常识</button>
+      </div>
+    </div>
+    <div class="row" style="border:0;padding:0">
+      <span class="r-main"><span class="r-title">置顶收藏</span><span class="r-desc">置顶的会排在最前面</span></span>
+      <button class="switch" id="qPin" role="switch" aria-checked="false"></button>
+    </div>
+    <button class="btn btn-ghost" id="delQuote" style="color:var(--danger);display:none">删除这条语录</button>
+  </div>
+</section>
+
+<!-- ============ 看大图 ============ -->
+<div class="viewer" id="viewer" aria-hidden="true">
+  <button class="viewer-close" id="viewerClose" aria-label="关闭">✕</button>
+  <img id="viewerImg" alt="">
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="zip.js"></script>
+<script src="db.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
