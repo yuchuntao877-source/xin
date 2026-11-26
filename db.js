@@ -73,36 +73,52 @@ const Store = (function () {
     });
   }
 
-  /* 压缩：长边 1600px、JPEG 质量 0.82，手机截图约 150–350KB */
+  /* 压缩：长边 1400px、JPEG 质量 0.8，手机截图约 120–300KB
+     优先用 createImageBitmap（解码在后台线程，Safari 15+ 支持），失败退回 <img> */
   async function compressImage(file, maxSide, quality) {
-    const limit = maxSide || 1600;
-    const q = quality || 0.82;
-    const url = URL.createObjectURL(file);
+    const limit = maxSide || 1400;
+    const q = quality || 0.8;
+    let bmp = null;
+    let url = null;
+    let el = null;
+
     try {
-      const img = await new Promise((resolve, reject) => {
-        const el = new Image();
-        el.onload = () => resolve(el);
-        el.onerror = () => reject(new Error('这张图读不出来'));
-        el.src = url;
-      });
-      const w0 = img.naturalWidth || img.width;
-      const h0 = img.naturalHeight || img.height;
+      if (typeof createImageBitmap === 'function') {
+        try { bmp = await createImageBitmap(file); } catch (e) { bmp = null; }
+      }
+
+      if (!bmp) {
+        url = URL.createObjectURL(file);
+        el = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error('这张图读不出来'));
+          img.src = url;
+        });
+      }
+
+      const w0 = bmp ? bmp.width : (el.naturalWidth || el.width);
+      const h0 = bmp ? bmp.height : (el.naturalHeight || el.height);
       if (!w0 || !h0) throw new Error('图片尺寸异常');
+
       const scale = Math.min(1, limit / Math.max(w0, h0));
       const w = Math.max(1, Math.round(w0 * scale));
       const h = Math.max(1, Math.round(h0 * scale));
+
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#0f1218';
       ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
+      ctx.drawImage(bmp || el, 0, 0, w, h);
+
       const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', q));
       if (!blob) throw new Error('图片压缩失败');
       return blob;
     } finally {
-      URL.revokeObjectURL(url);
+      if (bmp && typeof bmp.close === 'function') bmp.close();
+      if (url) URL.revokeObjectURL(url);
     }
   }
 
@@ -115,6 +131,7 @@ const Store = (function () {
     put: (store, value) => tx(store, 'readwrite', os => os.put(value)),
     del: (store, key) => tx(store, 'readwrite', os => os.delete(key)),
     all: (store) => tx(store, 'readonly', os => os.getAll()),
+    keys: (store) => tx(store, 'readonly', os => os.getAllKeys()),
     clear: (store) => tx(store, 'readwrite', os => os.clear())
   };
 })();

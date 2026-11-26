@@ -1528,9 +1528,31 @@ textarea { resize: none; }
   position: absolute;
   border: 1.5px solid #fff;
   border-radius: 2px;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .58);
-  cursor: move;
+  cursor: crosshair;
+  z-index: 2;
 }
+
+.crop-shade {
+  position: absolute;
+  background: rgba(0, 0, 0, .58);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.crop-h {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #fff;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .16);
+  box-sizing: border-box;
+}
+
+.crop-h.tl { left: -14px; top: -14px; border-right: 0; border-bottom: 0; border-radius: 4px 0 0 0; }
+.crop-h.tr { right: -14px; top: -14px; border-left: 0; border-bottom: 0; border-radius: 0 4px 0 0; }
+.crop-h.bl { left: -14px; bottom: -14px; border-right: 0; border-top: 0; border-radius: 0 0 0 4px; }
+.crop-h.br { right: -14px; bottom: -14px; border-left: 0; border-top: 0; border-radius: 0 0 4px 0; }
 
 .crop-tip {
   flex: none;
@@ -1538,6 +1560,36 @@ textarea { resize: none; }
   font-size: var(--fs-2xs);
   color: rgba(255, 255, 255, .45);
   padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ================= 处理中 ================= */
+.busy {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(6, 8, 12, .72);
+  color: #fff;
+  font-size: var(--fs-base);
+  backdrop-filter: blur(2px);
+}
+
+.busy[hidden] { display: none; }
+
+.busy-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .25);
+  border-top-color: #fff;
+  animation: busySpin .8s linear infinite;
+}
+
+@keyframes busySpin {
+  to { transform: rotate(360deg); }
 }
 
 .viewer-close {

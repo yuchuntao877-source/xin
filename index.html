@@ -491,13 +491,27 @@
   <div class="crop-body">
     <div class="crop-stage" id="cropStage">
       <img id="cropImg" alt="">
-      <div class="crop-box" id="cropBox"></div>
+      <div class="crop-shade" id="shTop"></div>
+      <div class="crop-shade" id="shBottom"></div>
+      <div class="crop-shade" id="shLeft"></div>
+      <div class="crop-shade" id="shRight"></div>
+      <div class="crop-box" id="cropBox">
+        <span class="crop-h tl" data-handle="tl"></span>
+        <span class="crop-h tr" data-handle="tr"></span>
+        <span class="crop-h bl" data-handle="bl"></span>
+        <span class="crop-h br" data-handle="br"></span>
+      </div>
     </div>
   </div>
   <div class="crop-tip">在图上拖一个框；框太小会自动还原成整张</div>
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="busy" id="busy" hidden>
+  <span class="busy-dot"></span>
+  <span id="busyText">处理中…</span>
+</div>
 
 <script src="zip.js"></script>
 <script src="db.js"></script>

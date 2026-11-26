@@ -50,6 +50,7 @@ let quotes = [];
 let settings = { theme: 'dark', zoom: 1, updown: 'cn', lastExport: '' };
 
 const imgUrls = new Map();     // 图片 id -> objectURL
+const imgSizes = new Map();    // 图片 id -> 字节数
 let imgBytes = 0;
 
 const PLACEHOLDER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
@@ -156,7 +157,9 @@ async function loadAll() {
   imgs.forEach(it => {
     if (it && it.id && it.blob) {
       imgUrls.set(it.id, URL.createObjectURL(it.blob));
-      imgBytes += it.bytes || it.blob.size || 0;
+      const bytes = it.bytes || it.blob.size || 0;
+      imgSizes.set(it.id, bytes);
+      imgBytes += bytes;
     }
   });
 }
@@ -169,6 +172,7 @@ async function addImage(file) {
   const id = Store.newId();
   await Store.put('img', { id, blob, bytes: blob.size, at: Date.now() });
   imgUrls.set(id, URL.createObjectURL(blob));
+  imgSizes.set(id, blob.size);
   imgBytes += blob.size;
   return id;
 }
@@ -178,6 +182,10 @@ async function removeImages(ids) {
     const url = imgUrls.get(id);
     if (url) URL.revokeObjectURL(url);
     imgUrls.delete(id);
+    if (imgSizes.has(id)) {
+      imgBytes = Math.max(0, imgBytes - imgSizes.get(id));
+      imgSizes.delete(id);
+    }
     try { await Store.del('img', id); } catch (e) { /* 忽略 */ }
   }
 }
@@ -189,12 +197,10 @@ async function gcImages() {
     Object.keys(reviews).forEach(k => (reviews[k].shots || []).forEach(id => used.add(id)));
     ui.draftShots.forEach(id => used.add(id));
     ui.reviewShots.forEach(id => used.add(id));
-    const all = (await Store.all('img')) || [];
-    const dead = all.filter(it => !used.has(it.id)).map(it => it.id);
-    if (dead.length) {
-      imgBytes = Math.max(0, imgBytes - all.filter(it => !used.has(it.id)).reduce((s, it) => s + (it.bytes || 0), 0));
-      await removeImages(dead);
-    }
+    // 只读 key，不读 blob，避免图多了以后每次保存都卡一下
+    const keys = (await Store.keys('img')) || [];
+    const dead = keys.filter(k => !used.has(k));
+    if (dead.length) await removeImages(dead);
   } catch (e) { /* 回收失败不影响使用 */ }
 }
 
@@ -211,7 +217,7 @@ function recItem(t, opts = {}) {
   const shots = t.shots || [];
   const media = shots.length ? `
     <div class="rec-media">
-      <div class="rec-track">${shots.map(id => `<img src="${shotUrl(id)}" data-view alt="">`).join('')}</div>
+      <div class="rec-track">${shots.map(id => `<img src="${shotUrl(id)}" loading="lazy" decoding="async" data-view alt="">`).join('')}</div>
       ${shots.length > 1 ? `<span class="rec-count">${shots.length} 张 · 左右滑</span>` : ''}
     </div>` : '';
   return `
@@ -236,7 +242,7 @@ function renderShots(sel, arr, who) {
   if (!box) return;
   box.innerHTML = arr.map((id, i) => `
     <div class="shot">
-      <img src="${shotUrl(id)}" data-view alt="">
+      <img src="${shotUrl(id)}" loading="lazy" decoding="async" data-view alt="">
       <button class="shot-crop" data-crop="${i}" data-who="${who}">裁剪</button>
       <button class="shot-x" data-rm="${i}" data-who="${who}" aria-label="删除">✕</button>
     </div>`).join('') + `
@@ -670,21 +676,46 @@ function paintCropBox() {
   el.style.top = b.y + 'px';
   el.style.width = b.w + 'px';
   el.style.height = b.h + 'px';
+
+  const W = cropState.dispW;
+  const H = cropState.dispH;
+  const set = (id, x, y, w, h) => {
+    const n = document.getElementById(id);
+    if (!n) return;
+    n.style.left = Math.max(0, x) + 'px';
+    n.style.top = Math.max(0, y) + 'px';
+    n.style.width = Math.max(0, w) + 'px';
+    n.style.height = Math.max(0, h) + 'px';
+  };
+  set('shTop', 0, 0, W, b.y);
+  set('shBottom', 0, b.y + b.h, W, H - b.y - b.h);
+  set('shLeft', 0, b.y, b.x, b.h);
+  set('shRight', b.x + b.w, b.y, W - b.x - b.w, b.h);
 }
 
 function layoutCropper() {
   const body = $('.crop-body');
   const stage = $('#cropStage');
-  const availW = Math.max(80, body.clientWidth - 24);
-  const availH = Math.max(80, body.clientHeight - 12);
+  const bw = body.clientWidth || window.innerWidth;
+  const bh = body.clientHeight || Math.round(window.innerHeight * 0.62);
+  const availW = Math.max(120, bw - 24);
+  const availH = Math.max(120, bh - 12);
   const scale = Math.min(availW / cropState.natW, availH / cropState.natH);
-  const w = Math.max(40, Math.round(cropState.natW * scale));
-  const h = Math.max(40, Math.round(cropState.natH * scale));
+  const w = Math.max(60, Math.round(cropState.natW * scale));
+  const h = Math.max(60, Math.round(cropState.natH * scale));
   cropState.dispW = w;
   cropState.dispH = h;
   stage.style.width = w + 'px';
   stage.style.height = h + 'px';
-  cropState.box = { x: 0, y: 0, w, h };
+
+  // 初始框留一圈边距，这样一眼能看出"这是个选区"，而不是整张图
+  const inset = 0.06;
+  cropState.box = {
+    x: Math.round(w * inset),
+    y: Math.round(h * inset),
+    w: Math.round(w * (1 - inset * 2)),
+    h: Math.round(h * (1 - inset * 2))
+  };
   paintCropBox();
 }
 
@@ -726,23 +757,31 @@ async function applyCrop() {
   const sw = Math.min(cropState.natW - sx, Math.max(8, Math.round(b.w * k)));
   const sh = Math.min(cropState.natH - sy, Math.max(8, Math.round(b.h * k)));
 
+  showBusy('正在裁剪…');
+  await new Promise(r => setTimeout(r, 20));
+
   const cv = document.createElement('canvas');
   cv.width = sw;
   cv.height = sh;
   const ctx = cv.getContext('2d');
   ctx.drawImage(cropState.imgEl, sx, sy, sw, sh, 0, 0, sw, sh);
 
-  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
-  if (!blob) return toast('裁剪失败，换张图试试');
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.88));
+  if (!blob) {
+    hideBusy();
+    return toast('裁剪失败，换张图试试');
+  }
 
   const id = Store.newId();
   await Store.put('img', { id, blob, bytes: blob.size, at: Date.now() });
   imgUrls.set(id, URL.createObjectURL(blob));
+  imgSizes.set(id, blob.size);
   imgBytes += blob.size;
 
   const arr = cropState.who === 'draft' ? ui.draftShots : ui.reviewShots;
   arr[cropState.index] = id;
   const sel = cropState.who === 'draft' ? '#fShots' : '#rShots';
+  hideBusy();
   closeCropper();
   renderShots(sel, arr, cropState.who);
   toast('已裁剪，记得点保存');
@@ -755,6 +794,19 @@ function toast(msg) {
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function showBusy(text) {
+  $('#busyText').textContent = text || '处理中…';
+  $('#busy').hidden = false;
+}
+
+function setBusyText(text) {
+  $('#busyText').textContent = text;
+}
+
+function hideBusy() {
+  $('#busy').hidden = true;
 }
 
 function showFatal(msg) {
@@ -935,7 +987,7 @@ function openDetail(id) {
   ];
   const shots = t.shots || [];
   $('#detailBody').innerHTML = `
-    ${shots.length ? `<div class="detail-shots">${shots.map(s => `<img src="${shotUrl(s)}" data-view alt="">`).join('')}</div>` : ''}
+    ${shots.length ? `<div class="detail-shots">${shots.map(s => `<img src="${shotUrl(s)}" loading="lazy" decoding="async" data-view alt="">`).join('')}</div>` : ''}
     <div class="rec-meta">
       <span class="badge ${t.side}">${sideText(t.side)}</span>
       <span class="rec-name" style="font-size:var(--fs-xl)">${esc(t.name)}</span>
@@ -1091,6 +1143,7 @@ async function importBackup(file) {
     await Store.clear('img');
     imgUrls.forEach(u => URL.revokeObjectURL(u));
     imgUrls.clear();
+    imgSizes.clear();
     imgBytes = 0;
 
     trades = Array.isArray(data.trades) ? data.trades : [];
@@ -1105,6 +1158,7 @@ async function importBackup(file) {
       const blob = new Blob([buf], { type: 'image/jpeg' });
       items.push({ id, blob, bytes: blob.size, at: Date.now() });
       imgUrls.set(id, URL.createObjectURL(blob));
+      imgSizes.set(id, blob.size);
       imgBytes += blob.size;
     }
     if (items.length) await Store.putMany('img', items);
@@ -1125,6 +1179,7 @@ async function clearAll() {
   await Store.clear('img');
   imgUrls.forEach(u => URL.revokeObjectURL(u));
   imgUrls.clear();
+  imgSizes.clear();
   imgBytes = 0;
   trades = [];
   reviews = {};
@@ -1276,60 +1331,106 @@ function bindEvents() {
   /* ---- 裁剪手势 ---- */
   const cStage = $('#cropStage');
 
-  cStage.addEventListener('pointerdown', e => {
+  const cropPoint = (cx, cy) => {
+    const r = cStage.getBoundingClientRect();
+    return {
+      x: clamp(cx - r.left, 0, cropState.dispW),
+      y: clamp(cy - r.top, 0, cropState.dispH)
+    };
+  };
+
+  const cropStart = (cx, cy, target) => {
     if (!cropState.open) return;
-    const r = cStage.getBoundingClientRect();
-    const x = clamp(e.clientX - r.left, 0, cropState.dispW);
-    const y = clamp(e.clientY - r.top, 0, cropState.dispH);
-    const b = cropState.box;
-    const inside = x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
-    cStage.setPointerCapture(e.pointerId);
-    if (inside) {
-      cropState.drag = { mode: 'move', sx: x, sy: y, ox: b.x, oy: b.y };
+    const p = cropPoint(cx, cy);
+    const handle = target && target.closest ? target.closest('[data-handle]') : null;
+    cropState.before = Object.assign({}, cropState.box);
+    if (handle) {
+      cropState.drag = { mode: 'resize', corner: handle.dataset.handle, box0: Object.assign({}, cropState.box) };
     } else {
-      cropState.drag = { mode: 'new', sx: x, sy: y };
-      cropState.box = { x, y, w: 0, h: 0 };
-      paintCropBox();
-    }
-  });
-
-  cStage.addEventListener('pointermove', e => {
-    const d = cropState.drag;
-    if (!d) return;
-    const r = cStage.getBoundingClientRect();
-    const x = clamp(e.clientX - r.left, 0, cropState.dispW);
-    const y = clamp(e.clientY - r.top, 0, cropState.dispH);
-    if (d.mode === 'move') {
-      const w = cropState.box.w;
-      const h = cropState.box.h;
-      cropState.box = {
-        x: clamp(d.ox + (x - d.sx), 0, Math.max(0, cropState.dispW - w)),
-        y: clamp(d.oy + (y - d.sy), 0, Math.max(0, cropState.dispH - h)),
-        w, h
-      };
-    } else {
-      cropState.box = {
-        x: Math.min(d.sx, x),
-        y: Math.min(d.sy, y),
-        w: Math.abs(x - d.sx),
-        h: Math.abs(y - d.sy)
-      };
-    }
-    paintCropBox();
-  });
-
-  const endCropDrag = () => {
-    if (!cropState.drag) return;
-    cropState.drag = null;
-    const b = cropState.box;
-    if (b.w < 30 || b.h < 30) {
-      cropState.box = { x: 0, y: 0, w: cropState.dispW, h: cropState.dispH };
+      // 在图上任意位置按下都可以直接拖出一个新框（不用先找空白处）
+      cropState.drag = { mode: 'new', sx: p.x, sy: p.y };
+      cropState.box = { x: p.x, y: p.y, w: 0, h: 0 };
       paintCropBox();
     }
   };
 
-  cStage.addEventListener('pointerup', endCropDrag);
-  cStage.addEventListener('pointercancel', endCropDrag);
+  const cropMoveTo = (cx, cy) => {
+    const d = cropState.drag;
+    if (!d) return;
+    const p = cropPoint(cx, cy);
+
+    if (d.mode === 'new') {
+      cropState.box = {
+        x: Math.min(d.sx, p.x),
+        y: Math.min(d.sy, p.y),
+        w: Math.abs(p.x - d.sx),
+        h: Math.abs(p.y - d.sy)
+      };
+    } else {
+      const b0 = d.box0;
+      let left = b0.x;
+      let top = b0.y;
+      let right = b0.x + b0.w;
+      let bottom = b0.y + b0.h;
+      if (d.corner.indexOf('l') >= 0) left = p.x;
+      if (d.corner.indexOf('r') >= 0) right = p.x;
+      if (d.corner.indexOf('t') >= 0) top = p.y;
+      if (d.corner.indexOf('b') >= 0) bottom = p.y;
+      const nx = Math.max(0, Math.min(left, right));
+      const ny = Math.max(0, Math.min(top, bottom));
+      cropState.box = {
+        x: nx,
+        y: ny,
+        w: Math.min(cropState.dispW - nx, Math.abs(right - left)),
+        h: Math.min(cropState.dispH - ny, Math.abs(bottom - top))
+      };
+    }
+    paintCropBox();
+  };
+
+  const cropEnd = () => {
+    if (!cropState.drag) return;
+    cropState.drag = null;
+    const b = cropState.box;
+    if (b.w < 30 || b.h < 30) {
+      const before = cropState.before;
+      cropState.box = (before && before.w >= 30 && before.h >= 30)
+        ? before
+        : { x: 0, y: 0, w: cropState.dispW, h: cropState.dispH };
+      paintCropBox();
+    }
+  };
+
+  if ('PointerEvent' in window) {
+    cStage.addEventListener('pointerdown', e => {
+      try { cStage.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+      cropStart(e.clientX, e.clientY, e.target);
+    });
+    cStage.addEventListener('pointermove', e => cropMoveTo(e.clientX, e.clientY));
+    cStage.addEventListener('pointerup', cropEnd);
+    cStage.addEventListener('pointercancel', cropEnd);
+  } else {
+    // 老版 iOS / 部分内嵌浏览器没有 Pointer Events，退回触摸事件
+    cStage.addEventListener('touchstart', e => {
+      const t = e.changedTouches[0];
+      if (!t) return;
+      cropStart(t.clientX, t.clientY, e.target);
+      e.preventDefault();
+    }, { passive: false });
+
+    cStage.addEventListener('touchmove', e => {
+      const t = e.changedTouches[0];
+      if (!t) return;
+      cropMoveTo(t.clientX, t.clientY);
+      e.preventDefault();
+    }, { passive: false });
+
+    cStage.addEventListener('touchend', cropEnd);
+    cStage.addEventListener('touchcancel', cropEnd);
+  }
+
+  cStage.addEventListener('pointerup', cropEnd);
+  cStage.addEventListener('pointercancel', cropEnd);
   $('#cropCancel').addEventListener('click', closeCropper);
   $('#cropDone').addEventListener('click', applyCrop);
 
@@ -1371,17 +1472,26 @@ function bindEvents() {
   });
 
   async function handleFiles(files, who) {
-    if (!files || !files.length) return;
+    const list = Array.from(files || []).filter(f => f.type && f.type.indexOf('image/') === 0);
+    if (!list.length) return;
+
     const arr = [];
-    for (const f of files) {
-      if (!f.type.startsWith('image/')) continue;
-      toast('正在处理图片…');
-      try {
-        arr.push(await addImage(f));
-      } catch (err) {
-        toast('有一张图处理失败：' + (err.message || err));
+    showBusy(`处理图片 0/${list.length}`);
+    try {
+      for (let i = 0; i < list.length; i++) {
+        setBusyText(`处理图片 ${i + 1}/${list.length}`);
+        // 让浏览器先把上面的文字画出来，再干重活，避免看起来像卡死
+        await new Promise(r => setTimeout(r, 30));
+        try {
+          arr.push(await addImage(list[i]));
+        } catch (err) {
+          toast('有一张图处理失败');
+        }
       }
+    } finally {
+      hideBusy();
     }
+
     if (!arr.length) return;
     if (who === 'draft') {
       ui.draftShots.push(...arr);
