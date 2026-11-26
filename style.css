@@ -103,6 +103,15 @@ button, input, textarea, select {
   color: inherit;
 }
 
+/* iOS Safari：输入框字号小于 16px 时，聚焦会自动把整页放大。
+   这里统一抬到 16px 以上，点输入框就不会跳了。 */
+input, textarea, select {
+  font-size: max(16px, var(--fs-lg));
+}
+
+/* 允许双指缩放看图，但去掉"双击放大页面"，避免连点按钮时页面乱跳 */
+body { touch-action: manipulation; }
+
 button { cursor: pointer; }
 input, textarea { -webkit-appearance: none; appearance: none; }
 input:focus, textarea:focus { outline: none; }
@@ -782,7 +791,7 @@ textarea { resize: none; }
   min-width: 0;
   border: 0;
   background: transparent;
-  font-size: var(--fs-base);
+  font-size: max(16px, var(--fs-base));
 }
 
 .search input::placeholder { color: var(--text-3); }
@@ -1142,7 +1151,7 @@ textarea { resize: none; }
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 10px 11px;
-  font-size: var(--fs-lg);
+  font-size: max(16px, var(--fs-lg));
 }
 
 .field textarea { line-height: 1.6; min-height: 54px; }

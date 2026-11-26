@@ -4,7 +4,7 @@
    为什么不用缓存优先：应用还在改，缓存优先会让手机上一直跑旧版，
    出现"代码改了但行为没变"的假象。数据都在 IndexedDB 里，不经过这里。
    ========================================================== */
-const CACHE = 'trade-diary-v9';
+const CACHE = 'trade-diary-v10';
 const SHELL = [
   './',
   './index.html',
@@ -60,4 +60,5 @@ self.addEventListener('fetch', event => {
     }
   })());
 });
+
 

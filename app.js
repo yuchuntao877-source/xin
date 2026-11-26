@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /* ==========================================================
    交易手记 v1.0
@@ -28,7 +28,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
 
 const now = new Date();
 const TODAY_KEY = ymd(now);
-const BUILD = '1.0.9';
+const BUILD = '1.1.0';
 const IMG_SCALES = [0.7, 0.85, 1, 1.3, 1.6];
 
 const fn = (n, d = 2) => {
@@ -1881,4 +1881,5 @@ window.addEventListener('unhandledrejection', e => {
 });
 
 document.addEventListener('DOMContentLoaded', boot);
+
 
